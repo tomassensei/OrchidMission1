@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TVDE Contas</string>
+    <string name="reader_name">TVDE Contas — leitura Uber/Bolt</string>
+    <string name="reader_desc">Lê as ofertas da Uber Driver e da Bolt Driver para mostrar por cima quanto a viagem paga por km e por hora. Só lê o ecrã: não carrega em nada, não aceita nem recusa viagens e não guarda nomes de passageiros. Nada sai do telemóvel.</string>
+</resources>
