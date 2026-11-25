@@ -65,6 +65,10 @@ public class OfferReaderService extends AccessibilityService {
     static OfferReaderService instance;
     private String pendingPkg;
     private AccessibilityNodeInfo lastSource;
+    private String eventText = "";
+    private long eventTextAt;
+    private int retries;
+    private final java.util.ArrayDeque<String> offerDiag = new java.util.ArrayDeque<>();
     private final Runnable scan = this::scanNow;
     private int evUber, evBolt;
     private long lastEventAt, connectedAt;
@@ -81,6 +85,12 @@ public class OfferReaderService extends AccessibilityService {
         lastEventAt = System.currentTimeMillis();
         pendingPkg = pkg;
         try { AccessibilityNodeInfo src = e.getSource(); if (src != null) lastSource = src; } catch (Exception ignored) { }
+        // o próprio sinal traz texto quando abre uma janela nova (ex.: a oferta flutuante)
+        StringBuilder et = new StringBuilder();
+        for (CharSequence c : e.getText()) if (c != null && c.length() > 0) et.append(c).append(" | ");
+        if (e.getContentDescription() != null) et.append(e.getContentDescription()).append(" | ");
+        if (et.length() > 0) { eventText = et.toString(); eventTextAt = SystemClock.uptimeMillis(); }
+        retries = 0;
         long now = SystemClock.uptimeMillis();
         h.removeCallbacks(scan);
         // lê 250 ms depois do último movimento no ecrã; se o ecrã não parar de mexer, lê no máximo 1 vez por segundo
@@ -95,29 +105,53 @@ public class OfferReaderService extends AccessibilityService {
 
         StringBuilder sb = new StringBuilder();
         int nWin = 0;
+        java.util.List<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
         try {
             List<AccessibilityWindowInfo> wins = getWindows();
             for (AccessibilityWindowInfo w : wins) {
                 AccessibilityNodeInfo r = w.getRoot();
                 if (r == null) continue;
                 CharSequence p = r.getPackageName();
-                if (p != null && pkg.contentEquals(p)) { collect(r, sb, 0); nWin++; }
+                if (p != null && pkg.contentEquals(p)) { collect(r, sb, 0); nWin++; roots.add(r); }
             }
         } catch (Exception ignored) { }
-        // Se a janela não veio na lista, tenta a janela de onde veio o sinal — mas só se for da Uber/Bolt.
-        // Nunca lê outras apps.
-        if (sb.length() == 0 && lastSource != null) {
+        // A oferta flutuante (Uber em segundo plano) pode não vir na lista de janelas:
+        // então sobe a partir do elemento que mandou o sinal até ao topo e lê esse cartão.
+        // Só aceita elementos da Uber/Bolt — nunca lê outras apps.
+        String how = "janelas " + nWin;
+        if (lastSource != null) {
             try {
-                AccessibilityWindowInfo w = lastSource.getWindow();
-                AccessibilityNodeInfo r = w != null ? w.getRoot() : null;
-                if (r != null && r.getPackageName() != null && pkg.contentEquals(r.getPackageName())) { collect(r, sb, 0); nWin++; }
+                AccessibilityNodeInfo top = lastSource;
+                for (int i = 0; i < 60; i++) {
+                    AccessibilityNodeInfo up = top.getParent();
+                    if (up == null) break;
+                    top = up;
+                }
+                // lê este cartão se ainda não foi lido com as janelas (ex.: oferta flutuante por cima de outra app)
+                if (top.getPackageName() != null && pkg.contentEquals(top.getPackageName()) && !roots.contains(top)) {
+                    StringBuilder card = new StringBuilder();
+                    collect(top, card, 0);
+                    if (card.length() > 0) {
+                        sb.insert(0, card);
+                        how = nWin > 0 ? how + " + cartão flutuante" : "cartão flutuante";
+                    }
+                }
             } catch (Exception ignored) { }
         }
-        lastSource = null;
+        if (sb.length() == 0 && !eventText.isEmpty() && SystemClock.uptimeMillis() - eventTextAt < 3000) {
+            sb.append(eventText);
+            how = "texto do sinal";
+        }
+        // ainda vazio: a janela pode estar a abrir — tenta outra vez daqui a pouco (até 4 vezes)
+        if (sb.length() == 0 && retries < 4) {
+            retries++;
+            h.postDelayed(scan, 300L * retries);
+            return;
+        }
         String text = sb.toString();
         String plat = UBER.equals(pkg) ? "Uber" : "Bolt";
         OfferParser.Offer o = text.isEmpty() ? null : OfferParser.parse(text, plat);
-        recordDiag(plat, nWin, text, o);
+        recordDiag(plat, how, text, o);
         if (o == null) return;
 
         Prefs.put(this, "lastRaw", plat + " · " + new java.util.Date() + "\n" + text);
@@ -133,7 +167,7 @@ public class OfferReaderService extends AccessibilityService {
     }
 
     /** Guarda os últimos ecrãs lidos (só os que têm números) para perceber porque uma oferta não foi lida. */
-    private void recordDiag(String plat, int nWin, String text, OfferParser.Offer o) {
+    private void recordDiag(String plat, String how, String text, OfferParser.Offer o) {
         String hhmm = new java.text.SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new java.util.Date());
         String head = "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
                 + " · eventos Uber " + evUber + " · Bolt " + evBolt
@@ -142,13 +176,25 @@ public class OfferReaderService extends AccessibilityService {
         boolean hasDigit = shortTxt.matches("(?s).*\\d.*");
         if ((hasDigit || text.isEmpty()) && !shortTxt.equals(lastDiagText)) {
             lastDiagText = shortTxt;
-            diag.addFirst("[" + hhmm + "] " + plat + " · janelas " + nWin + " · "
+            diag.addFirst("[" + hhmm + "] " + plat + " · " + how + " · "
                     + (text.isEmpty() ? "SEM TEXTO (a app não deixa ler este ecrã?)"
                        : o != null ? "OFERTA LIDA " + nf.format(o.value) + " €" : "não parece oferta")
                     + "\n" + shortTxt);
             while (diag.size() > 8) diag.removeLast();
         }
+        boolean looksOffer = text.contains("€") && text.toLowerCase(Locale.ROOT).contains("km");
+        if (looksOffer && (offerDiag.isEmpty() || !offerDiag.peekFirst().endsWith(shortTxt))) {
+            offerDiag.addFirst("[" + hhmm + "] " + plat + " · " + how + " · "
+                    + (o != null ? "LIDA " + nf.format(o.value) + " € · " + nf.format(o.perKm()) + " €/km · " + nf.format(o.perHour()) + " €/h" : "NÃO RECONHECIDA")
+                    + "\n" + shortTxt);
+            while (offerDiag.size() > 6) offerDiag.removeLast();
+        }
         StringBuilder all = new StringBuilder(head).append("\n\n");
+        if (!offerDiag.isEmpty()) {
+            all.append("=== OFERTAS (últimas ").append(offerDiag.size()).append(") ===\n\n");
+            for (String d : offerDiag) all.append(d).append("\n\n");
+            all.append("=== OUTROS ECRÃS ===\n\n");
+        }
         for (String d : diag) all.append(d).append("\n\n");
         Prefs.put(this, "diag", all.toString());
     }

@@ -63,6 +63,8 @@ public final class OfferParser {
         if (raw == null) return null;
         String t = raw.replace(' ', ' ').replace(' ', ' ');
         String noBonus = PLUS_MONEY.matcher(t).replaceAll(" ");
+        // "0,59 €/km est." e "18 €/h" não são o valor da oferta
+        noBonus = noBonus.replaceAll("\\d{1,3}(?:[.,]\\d{1,2})?\\s?€\\s?/\\s?(?:km|h)", " ");
 
         Matcher m = MONEY.matcher(noBonus);
         double value = 0;
