@@ -85,6 +85,13 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String lastOffer() { return Prefs.s(c, "lastOffer"); }
         @JavascriptInterface public String lastRaw() { return Prefs.s(c, "lastRaw"); }
+        @JavascriptInterface public String diag() { return Prefs.s(c, "diag"); }
+        @JavascriptInterface public boolean testCard() {
+            OfferReaderService s = OfferReaderService.instance;
+            if (s == null) return false;
+            s.showTest();
+            return true;
+        }
         @JavascriptInterface public boolean readerOn() { return readerEnabled(); }
         @JavascriptInterface public void openAccessibility() {
             Intent i = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);

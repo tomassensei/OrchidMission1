@@ -48,6 +48,8 @@ public class OfferReaderService extends AccessibilityService {
 
     @Override
     protected void onServiceConnected() {
+        instance = this;
+        connectedAt = System.currentTimeMillis();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         h = new Handler(Looper.getMainLooper());
         nf.setMinimumFractionDigits(2);
@@ -60,37 +62,56 @@ public class OfferReaderService extends AccessibilityService {
         });
     }
 
+    static OfferReaderService instance;
+    private String pendingPkg;
+    private final Runnable scan = this::scanNow;
+    private int evUber, evBolt;
+    private long lastEventAt, connectedAt;
+    private final java.util.ArrayDeque<String> diag = new java.util.ArrayDeque<>();
+    private String lastDiagText = "";
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
         if (e == null || e.getPackageName() == null) return;
         String pkg = e.getPackageName().toString();
-        if (!UBER.equals(pkg) && !BOLT.equals(pkg)) return;
+        if (UBER.equals(pkg)) evUber++;
+        else if (BOLT.equals(pkg)) evBolt++;
+        else return;
+        lastEventAt = System.currentTimeMillis();
+        pendingPkg = pkg;
         long now = SystemClock.uptimeMillis();
-        if (now - lastScan < 350) return;   // poupa bateria: no máximo ~3 leituras por segundo
-        lastScan = now;
+        h.removeCallbacks(scan);
+        // lê 250 ms depois do último movimento no ecrã; se o ecrã não parar de mexer, lê no máximo 1 vez por segundo
+        if (now - lastScan > 1000) scanNow();
+        else h.postDelayed(scan, 250);
+    }
+
+    private void scanNow() {
+        String pkg = pendingPkg;
+        if (pkg == null) return;
+        lastScan = SystemClock.uptimeMillis();
 
         StringBuilder sb = new StringBuilder();
+        int nWin = 0;
         try {
             List<AccessibilityWindowInfo> wins = getWindows();
             for (AccessibilityWindowInfo w : wins) {
                 AccessibilityNodeInfo r = w.getRoot();
                 if (r == null) continue;
                 CharSequence p = r.getPackageName();
-                if (p != null && pkg.contentEquals(p)) collect(r, sb, 0);
+                if (p != null && pkg.contentEquals(p)) { collect(r, sb, 0); nWin++; }
             }
         } catch (Exception ignored) { }
         if (sb.length() == 0) {
             AccessibilityNodeInfo r = getRootInActiveWindow();
-            if (r != null) collect(r, sb, 0);
+            if (r != null) { collect(r, sb, 0); nWin++; }
         }
         String text = sb.toString();
-        if (text.isEmpty()) return;
-
         String plat = UBER.equals(pkg) ? "Uber" : "Bolt";
-        OfferParser.Offer o = OfferParser.parse(text, plat);
+        OfferParser.Offer o = text.isEmpty() ? null : OfferParser.parse(text, plat);
+        recordDiag(plat, nWin, text, o);
         if (o == null) return;
 
-        // guarda o texto para afinar a leitura se algo vier errado
         Prefs.put(this, "lastRaw", plat + " · " + new java.util.Date() + "\n" + text);
 
         String sig = o.signature();
@@ -101,6 +122,33 @@ public class OfferReaderService extends AccessibilityService {
         Prefs.put(this, "lastOffer", o.toJson(t));
         if (!Prefs.b(this, "readerCard", true)) return;
         showCard(o);
+    }
+
+    /** Guarda os últimos ecrãs lidos (só os que têm números) para perceber porque uma oferta não foi lida. */
+    private void recordDiag(String plat, int nWin, String text, OfferParser.Offer o) {
+        String hhmm = new java.text.SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new java.util.Date());
+        String head = "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
+                + " · eventos Uber " + evUber + " · Bolt " + evBolt
+                + " · Android " + android.os.Build.VERSION.RELEASE + " · " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
+        String shortTxt = text.length() > 1500 ? text.substring(0, 1500) + "…" : text;
+        boolean hasDigit = shortTxt.matches("(?s).*\\d.*");
+        if ((hasDigit || text.isEmpty()) && !shortTxt.equals(lastDiagText)) {
+            lastDiagText = shortTxt;
+            diag.addFirst("[" + hhmm + "] " + plat + " · janelas " + nWin + " · "
+                    + (text.isEmpty() ? "SEM TEXTO (a app não deixa ler este ecrã?)"
+                       : o != null ? "OFERTA LIDA " + nf.format(o.value) + " €" : "não parece oferta")
+                    + "\n" + shortTxt);
+            while (diag.size() > 8) diag.removeLast();
+        }
+        StringBuilder all = new StringBuilder(head).append("\n\n");
+        for (String d : diag) all.append(d).append("\n\n");
+        Prefs.put(this, "diag", all.toString());
+    }
+
+    /** Mostra um cartão de exemplo, para confirmar que o cartão consegue aparecer por cima. */
+    void showTest() {
+        OfferParser.Offer o = OfferParser.parse("Teste | 9,80 € | 6 min (2,5 km) | 18 min (7,2 km)", "Teste");
+        if (o != null) showCard(o);
     }
 
     private void collect(AccessibilityNodeInfo n, StringBuilder sb, int depth) {
@@ -247,6 +295,8 @@ public class OfferReaderService extends AccessibilityService {
 
     @Override
     public void onDestroy() {
+        instance = null;
+        h.removeCallbacks(scan);
         hideCard();
         if (tts != null) tts.shutdown();
         super.onDestroy();
