@@ -69,6 +69,22 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    /** Nomes técnicos das apps Uber/Bolt instaladas, para confirmar que a leitura procura as apps certas. */
+    String appsUberBolt() {
+        StringBuilder sb = new StringBuilder("Apps no telemóvel: ");
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(i, 0)) {
+                String label = String.valueOf(r.loadLabel(pm));
+                String l = label.toLowerCase(Locale.ROOT);
+                if (l.contains("uber") || l.contains("bolt"))
+                    sb.append(label).append(" = ").append(r.activityInfo.packageName).append("; ");
+            }
+        } catch (Exception e) { sb.append("(não deu para ver)"); }
+        return sb.toString();
+    }
+
     /** Funções que a página pode chamar com window.Android.… */
     final class Bridge {
         final Context c = MainActivity.this;
@@ -85,7 +101,7 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String lastOffer() { return Prefs.s(c, "lastOffer"); }
         @JavascriptInterface public String lastRaw() { return Prefs.s(c, "lastRaw"); }
-        @JavascriptInterface public String diag() { return Prefs.s(c, "diag"); }
+        @JavascriptInterface public String diag() { return appsUberBolt() + "\n" + Prefs.s(c, "diag"); }
         @JavascriptInterface public boolean testCard() {
             OfferReaderService s = OfferReaderService.instance;
             if (s == null) return false;

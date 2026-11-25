@@ -64,6 +64,7 @@ public class OfferReaderService extends AccessibilityService {
 
     static OfferReaderService instance;
     private String pendingPkg;
+    private AccessibilityNodeInfo lastSource;
     private final Runnable scan = this::scanNow;
     private int evUber, evBolt;
     private long lastEventAt, connectedAt;
@@ -79,6 +80,7 @@ public class OfferReaderService extends AccessibilityService {
         else return;
         lastEventAt = System.currentTimeMillis();
         pendingPkg = pkg;
+        try { AccessibilityNodeInfo src = e.getSource(); if (src != null) lastSource = src; } catch (Exception ignored) { }
         long now = SystemClock.uptimeMillis();
         h.removeCallbacks(scan);
         // lê 250 ms depois do último movimento no ecrã; se o ecrã não parar de mexer, lê no máximo 1 vez por segundo
@@ -102,10 +104,16 @@ public class OfferReaderService extends AccessibilityService {
                 if (p != null && pkg.contentEquals(p)) { collect(r, sb, 0); nWin++; }
             }
         } catch (Exception ignored) { }
-        if (sb.length() == 0) {
-            AccessibilityNodeInfo r = getRootInActiveWindow();
-            if (r != null) { collect(r, sb, 0); nWin++; }
+        // Se a janela não veio na lista, tenta a janela de onde veio o sinal — mas só se for da Uber/Bolt.
+        // Nunca lê outras apps.
+        if (sb.length() == 0 && lastSource != null) {
+            try {
+                AccessibilityWindowInfo w = lastSource.getWindow();
+                AccessibilityNodeInfo r = w != null ? w.getRoot() : null;
+                if (r != null && r.getPackageName() != null && pkg.contentEquals(r.getPackageName())) { collect(r, sb, 0); nWin++; }
+            } catch (Exception ignored) { }
         }
+        lastSource = null;
         String text = sb.toString();
         String plat = UBER.equals(pkg) ? "Uber" : "Bolt";
         OfferParser.Offer o = text.isEmpty() ? null : OfferParser.parse(text, plat);
@@ -130,7 +138,7 @@ public class OfferReaderService extends AccessibilityService {
         String head = "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
                 + " · eventos Uber " + evUber + " · Bolt " + evBolt
                 + " · Android " + android.os.Build.VERSION.RELEASE + " · " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
-        String shortTxt = text.length() > 1500 ? text.substring(0, 1500) + "…" : text;
+        String shortTxt = text.length() > 3000 ? text.substring(0, 3000) + "…" : text;
         boolean hasDigit = shortTxt.matches("(?s).*\\d.*");
         if ((hasDigit || text.isEmpty()) && !shortTxt.equals(lastDiagText)) {
             lastDiagText = shortTxt;
@@ -152,11 +160,17 @@ public class OfferReaderService extends AccessibilityService {
     }
 
     private void collect(AccessibilityNodeInfo n, StringBuilder sb, int depth) {
-        if (n == null || depth > 40 || sb.length() > 6000) return;
+        if (n == null || depth > 90 || sb.length() > 9000) return;
         CharSequence tx = n.getText();
         CharSequence cd = n.getContentDescription();
-        if (tx != null && tx.length() > 0) sb.append(tx).append(" | ");
-        else if (cd != null && cd.length() > 0) sb.append(cd).append(" | ");
+        String t = tx != null ? tx.toString().trim() : "";
+        String d = cd != null ? cd.toString().trim() : "";
+        if (!t.isEmpty()) sb.append(t).append(" | ");
+        if (!d.isEmpty() && !d.equals(t)) sb.append(d).append(" | ");
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            CharSequence st = n.getStateDescription();
+            if (st != null && st.length() > 0) sb.append(st).append(" | ");
+        }
         for (int i = 0; i < n.getChildCount(); i++) {
             AccessibilityNodeInfo c = n.getChild(i);
             if (c != null) collect(c, sb, depth + 1);
