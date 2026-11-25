@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,7 +21,25 @@ jobs:
           gradle-version: '8.7'
       - name: Compilar
         run: gradle assembleDebug
+      - name: Ver o conteúdo do APK
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          BT=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)
+          unzip -l $APK
+          $BT/aapt2 dump badging $APK | head -8
+          $BT/aapt2 dump permissions $APK
+          $BT/apksigner verify --print-certs $APK | head -4
+          sha256sum $APK
       - uses: actions/upload-artifact@v4
         with:
           name: TVDE-Contas-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Publicar em Releases (para descarregar no telemóvel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk TVDE-Contas.apk
+          gh release delete apk-mais-recente -y --cleanup-tag || true
+          gh release create apk-mais-recente TVDE-Contas.apk \
+            -t "TVDE Contas — versão mais recente" \
+            -n "Toque em TVDE-Contas.apk para descarregar e instalar. Compilado de ${GITHUB_SHA::7}."
