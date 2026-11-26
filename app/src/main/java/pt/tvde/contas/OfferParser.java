@@ -97,7 +97,9 @@ public final class OfferParser {
         else o.tripMin = mins.get(0);
         if (o.totalKm() <= 0 || o.totalKm() > 400) return null;
 
-        Matcher ms = STOPS.matcher(t);
+        // a leitura da imagem às vezes lê "1 paragem" como "l paragem" ou "I paragem"
+        String ts = t.replaceAll("(^|[|\\s])[lI|]\\s+(paragem|stop)\\b", "$11 $2");
+        Matcher ms = STOPS.matcher(ts);
         if (ms.find()) {
             String g = ms.group(1) != null ? ms.group(1) : ms.group(2);
             o.stops = (int) num(g);

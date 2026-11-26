@@ -74,6 +74,11 @@ public class OfferReaderService extends AccessibilityService {
     private int sameCount;
     private String prevText = "";
     private boolean shotBusy;
+    private android.graphics.Rect offerBounds;   // janela da oferta flutuante (imagem), se houver
+    private long hiddenAt;                         // última vez que a Uber mostrou um ecrã sem texto
+    private int ocrMisses;
+    private String ocrPlat = "Uber";
+    private final Runnable reOcr = () -> { if (SystemClock.uptimeMillis() - hiddenAt < 30_000 && ocrMisses < 3) ocrScreen(ocrPlat); };
     private com.google.mlkit.vision.text.TextRecognizer ocr;
     private final java.util.ArrayDeque<String> offerDiag = new java.util.ArrayDeque<>();
     private final Runnable scan = this::scanNow;
@@ -125,6 +130,7 @@ public class OfferReaderService extends AccessibilityService {
         int nWin = 0;
         java.util.List<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
         String rootInfo = "";
+        android.graphics.Rect imgBounds = null;
         try {
             List<AccessibilityWindowInfo> wins = getWindows();
             for (AccessibilityWindowInfo w : wins) {
@@ -134,6 +140,11 @@ public class OfferReaderService extends AccessibilityService {
                 if (p != null && pkg.contentEquals(p)) {
                     collect(r, sb, 0); nWin++; roots.add(r);
                     rootInfo = r.getClassName() + "/" + r.getChildCount() + " filhos";
+                    if (r.getChildCount() == 0) {          // a oferta da Uber desenhada como imagem
+                        android.graphics.Rect b = new android.graphics.Rect();
+                        w.getBoundsInScreen(b);
+                        if (!b.isEmpty()) imgBounds = b;
+                    }
                 }
             }
         } catch (Exception ignored) { }
@@ -178,6 +189,7 @@ public class OfferReaderService extends AccessibilityService {
         // A Uber esconde o texto do cartão da oferta: lê a imagem do ecrã quando
         // a leitura vem vazia, ou quando uma janela acabou de abrir e não se reconheceu oferta.
         boolean justOpened = SystemClock.uptimeMillis() - lastStateAt < 2500;
+        if (text.isEmpty()) { hiddenAt = SystemClock.uptimeMillis(); ocrMisses = 0; offerBounds = imgBounds; }
         if (o == null && (text.isEmpty() || justOpened)) ocrScreen(plat);
     }
 
@@ -201,11 +213,13 @@ public class OfferReaderService extends AccessibilityService {
 
     /** Tira uma imagem do ecrã (só na memória, nunca é guardada) e lê o texto dela no próprio telemóvel. */
     private void ocrScreen(String plat) {
-        if (android.os.Build.VERSION.SDK_INT < 30 || shotBusy || card != null) return;
+        if (android.os.Build.VERSION.SDK_INT < 30 || shotBusy) return;
         long now = SystemClock.uptimeMillis();
         if (now - lastShotAt < 1500) return;
         lastShotAt = now;
         shotBusy = true;
+        ocrPlat = plat;
+        h.removeCallbacks(reOcr);
         try {
             takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
                 @Override public void onSuccess(ScreenshotResult r) {
@@ -217,6 +231,22 @@ public class OfferReaderService extends AccessibilityService {
                         hb.close();
                     } catch (Throwable ex) { bmp = null; logError("imagem do ecrã", ex); }
                     if (bmp == null) { shotBusy = false; return; }
+                    // lê só a zona da oferta e nunca o nosso próprio cartão
+                    try {
+                        android.graphics.Rect c = new android.graphics.Rect(0, 0, bmp.getWidth(), bmp.getHeight());
+                        if (offerBounds != null && !c.intersect(offerBounds)) c.set(0, 0, bmp.getWidth(), bmp.getHeight());
+                        if (card != null) {
+                            int[] loc = new int[2];
+                            card.getLocationOnScreen(loc);
+                            int cardBottom = loc[1] + card.getHeight();
+                            if (cardBottom > c.top && cardBottom < c.bottom - 150) c.top = cardBottom;
+                        }
+                        if (c.width() > 50 && c.height() > 50 && (c.width() != bmp.getWidth() || c.height() != bmp.getHeight())) {
+                            android.graphics.Bitmap cut = android.graphics.Bitmap.createBitmap(bmp, c.left, c.top, c.width(), c.height());
+                            bmp.recycle();
+                            bmp = cut;
+                        }
+                    } catch (Throwable t) { logError("cortar imagem", t); }
                     if (ocr == null) ocr = com.google.mlkit.vision.text.TextRecognition.getClient(
                             com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS);
                     final android.graphics.Bitmap img = bmp;
@@ -229,8 +259,14 @@ public class OfferReaderService extends AccessibilityService {
                                         sb.append(l.getText()).append(" | ");
                                 img.recycle();
                                 shotBusy = false;
-                                try { handleText(plat, "leitura da imagem", sb.toString()); }
+                                OfferParser.Offer got = null;
+                                try { got = handleText(plat, "leitura da imagem", sb.toString()); }
                                 catch (Throwable t) { logError("imagem", t); }
+                                // a Uber passa à oferta seguinte sem avisar: enquanto houver oferta
+                                // em imagem no ecrã, volta a ler de 2,5 em 2,5 s (pára após 3 leituras sem oferta ou 30 s)
+                                if (got == null) ocrMisses++; else ocrMisses = 0;
+                                h.removeCallbacks(reOcr);
+                                h.postDelayed(reOcr, 2500);
                             })
                             .addOnFailureListener(ex -> { img.recycle(); shotBusy = false; logError("reconhecer texto", ex); });
                     } catch (Throwable t) { shotBusy = false; logError("reconhecer texto", t); }
