@@ -151,7 +151,9 @@ nav button.on{color:#fff;background:#173d29}nav svg{width:24px;height:24px}
 <div class="f"><label>Tempo do cartão</label><select id="rdSecs"><option>10</option><option>15</option><option>20</option><option>30</option><option>60</option></select></div>
 <div class="row" style="margin-top:8px"><button class="ghost" id="rdTest" style="flex:1">Testar o cartão</button></div>
 <details style="margin-top:8px" open><summary class="note">Diagnóstico da leitura</summary><p class="note">Abra a Uber ou a Bolt com uma oferta no ecrã (ou só o ecrã principal), volte aqui e toque em "Atualizar".</p><pre id="rdDiag" style="white-space:pre-wrap;font-size:12px;color:var(--mute);max-height:260px;overflow:auto"></pre>
-<div class="row"><button class="ghost" id="rdDiagUp" style="flex:1">Atualizar</button><button class="ghost" id="rdDiagCopy" style="flex:1">Copiar diagnóstico</button></div></details>
+<div class="row"><button class="ghost" id="rdDiagUp" style="flex:1">Atualizar</button><button class="ghost" id="rdDiagCopy" style="flex:1">Copiar diagnóstico</button></div>
+<div class="row" style="margin-top:6px"><button class="red" id="rdDiagDel" style="flex:1">Apagar diagnóstico</button></div>
+<p class="note">O diagnóstico fica só neste telemóvel e tem as moradas das ofertas. Apague-o depois de o enviar.</p></details>
 <details style="margin-top:8px"><summary class="note">Última leitura (texto do ecrã)</summary><pre id="rdRaw" style="white-space:pre-wrap;font-size:12px;color:var(--mute);max-height:220px;overflow:auto"></pre>
 <button class="ghost" id="rdCopy">Copiar texto</button><p class="note">Se uma oferta vier mal lida, copie este texto e envie-o para afinar a leitura.</p></details></div>
 <div class="card"><h2>Mínimos usados <small id="minSrc"></small></h2>
@@ -493,6 +495,7 @@ if(window.Android){
   $('rdInfo').addEventListener('click',()=>Android.openAppInfo());
   const upDiag=()=>{let d='';try{d=Android.diag()}catch(e){}$('rdDiag').textContent=d||'Ainda não chegou nada da Uber/Bolt. Confirme que a leitura está ligada e abra a Uber ou a Bolt.'};
   $('rdDiagUp').addEventListener('click',upDiag);
+  $('rdDiagDel').addEventListener('click',()=>{try{Android.clearDiag()}catch(e){}upDiag();$('rdRaw').textContent='Ainda não leu nenhuma oferta.'});
   $('rdDiagCopy').addEventListener('click',()=>{try{navigator.clipboard.writeText($('rdDiag').textContent);$('rdDiagCopy').textContent='✓ Copiado'}catch(e){}});
   $('rdTest').addEventListener('click',()=>{let ok=false;try{ok=Android.testCard()}catch(e){}$('rdTest').textContent=ok?'✓ Cartão enviado — veja no topo':'⚠ A leitura não está ligada';setTimeout(()=>$('rdTest').textContent='Testar o cartão',3000)});
   $('rdCopy').addEventListener('click',()=>{try{navigator.clipboard.writeText($('rdRaw').textContent);$('rdCopy').textContent='✓ Copiado'}catch(e){}});

@@ -68,6 +68,11 @@ public class OfferReaderService extends AccessibilityService {
     private String eventText = "";
     private long eventTextAt;
     private int retries;
+    private long lastStateAt, lastShotAt;
+    private int sameCount;
+    private String prevText = "";
+    private boolean shotBusy;
+    private com.google.mlkit.vision.text.TextRecognizer ocr;
     private final java.util.ArrayDeque<String> offerDiag = new java.util.ArrayDeque<>();
     private final Runnable scan = this::scanNow;
     private int evUber, evBolt;
@@ -92,10 +97,13 @@ public class OfferReaderService extends AccessibilityService {
         if (et.length() > 0) { eventText = et.toString(); eventTextAt = SystemClock.uptimeMillis(); }
         retries = 0;
         long now = SystemClock.uptimeMillis();
+        if (e.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) { lastStateAt = now; sameCount = 0; }
         h.removeCallbacks(scan);
-        // lê 250 ms depois do último movimento no ecrã; se o ecrã não parar de mexer, lê no máximo 1 vez por segundo
-        if (now - lastScan > 1000) scanNow();
-        else h.postDelayed(scan, 250);
+        // lê 250 ms depois do último movimento no ecrã; se o ecrã não parar de mexer, lê no máximo 1 vez por segundo.
+        // Se o texto não muda (ex.: só o mapa a mexer), passa a ler de 3 em 3 segundos para poupar bateria.
+        long gap = sameCount > 3 ? 3000 : 1000;
+        if (now - lastScan > gap) scanNow();
+        else h.postDelayed(scan, Math.max(250, gap - (now - lastScan)));
     }
 
     private void scanNow() {
@@ -106,13 +114,17 @@ public class OfferReaderService extends AccessibilityService {
         StringBuilder sb = new StringBuilder();
         int nWin = 0;
         java.util.List<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
+        String rootInfo = "";
         try {
             List<AccessibilityWindowInfo> wins = getWindows();
             for (AccessibilityWindowInfo w : wins) {
                 AccessibilityNodeInfo r = w.getRoot();
                 if (r == null) continue;
                 CharSequence p = r.getPackageName();
-                if (p != null && pkg.contentEquals(p)) { collect(r, sb, 0); nWin++; roots.add(r); }
+                if (p != null && pkg.contentEquals(p)) {
+                    collect(r, sb, 0); nWin++; roots.add(r);
+                    rootInfo = r.getClassName() + "/" + r.getChildCount() + " filhos";
+                }
             }
         } catch (Exception ignored) { }
         // A oferta flutuante (Uber em segundo plano) pode não vir na lista de janelas:
@@ -150,11 +162,22 @@ public class OfferReaderService extends AccessibilityService {
         }
         String text = sb.toString();
         String plat = UBER.equals(pkg) ? "Uber" : "Bolt";
+        if (text.equals(prevText)) sameCount++; else { sameCount = 0; prevText = text; }
+        if (text.isEmpty() && !rootInfo.isEmpty()) how += " (" + rootInfo + ")";
+        OfferParser.Offer o = handleText(plat, how, text);
+        // A Uber esconde o texto do cartão da oferta: lê a imagem do ecrã quando
+        // a leitura vem vazia, ou quando uma janela acabou de abrir e não se reconheceu oferta.
+        boolean justOpened = SystemClock.uptimeMillis() - lastStateAt < 2500;
+        if (o == null && (text.isEmpty() || justOpened)) ocrScreen(plat);
+    }
+
+    /** Reconhece a oferta num texto (lido do ecrã ou da imagem), regista no diagnóstico e mostra o cartão. */
+    private OfferParser.Offer handleText(String plat, String how, String text) {
         OfferParser.Offer o = text.isEmpty() ? null : OfferParser.parse(text, plat);
         recordDiag(plat, how, text, o);
-        if (o == null) return;
+        if (o == null) return null;
 
-        Prefs.put(this, "lastRaw", plat + " · " + new java.util.Date() + "\n" + text);
+        Prefs.put(this, "lastRaw", plat + " · " + new java.util.Date() + "\n" + redact(text));
 
         String sig = o.signature();
         long t = System.currentTimeMillis();
@@ -162,8 +185,61 @@ public class OfferReaderService extends AccessibilityService {
         lastSig = sig;
         lastShown = t;
         Prefs.put(this, "lastOffer", o.toJson(t));
-        if (!Prefs.b(this, "readerCard", true)) return;
-        showCard(o);
+        if (Prefs.b(this, "readerCard", true)) showCard(o);
+        return o;
+    }
+
+    /** Tira uma imagem do ecrã (só na memória, nunca é guardada) e lê o texto dela no próprio telemóvel. */
+    private void ocrScreen(String plat) {
+        if (android.os.Build.VERSION.SDK_INT < 30 || shotBusy || card != null) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastShotAt < 1500) return;
+        lastShotAt = now;
+        shotBusy = true;
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+                @Override public void onSuccess(ScreenshotResult r) {
+                    android.graphics.Bitmap bmp = null;
+                    try {
+                        android.hardware.HardwareBuffer hb = r.getHardwareBuffer();
+                        android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, r.getColorSpace());
+                        if (hw != null) { bmp = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false); hw.recycle(); }
+                        hb.close();
+                    } catch (Exception ex) { bmp = null; }
+                    if (bmp == null) { shotBusy = false; return; }
+                    if (ocr == null) ocr = com.google.mlkit.vision.text.TextRecognition.getClient(
+                            com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS);
+                    final android.graphics.Bitmap img = bmp;
+                    ocr.process(com.google.mlkit.vision.common.InputImage.fromBitmap(img, 0))
+                            .addOnSuccessListener(res -> {
+                                StringBuilder sb = new StringBuilder();
+                                for (com.google.mlkit.vision.text.Text.TextBlock b : res.getTextBlocks())
+                                    for (com.google.mlkit.vision.text.Text.Line l : b.getLines())
+                                        sb.append(l.getText()).append(" | ");
+                                img.recycle();
+                                shotBusy = false;
+                                handleText(plat, "leitura da imagem", sb.toString());
+                            })
+                            .addOnFailureListener(ex -> { img.recycle(); shotBusy = false; });
+                }
+                @Override public void onFailure(int code) {
+                    shotBusy = false;
+                    recordDiag(plat, "imagem do ecrã recusada (código " + code + ")", "", null);
+                }
+            });
+        } catch (Exception ex) { shotBusy = false; }
+    }
+
+    /** Tira do texto o nome de passageiro que a Bolt mostra a seguir à percentagem (ex.: "84% | Ivone |"). */
+    static String redact(String s) {
+        return s.replaceAll("(\\d{1,3}\\s?% \\| )\\p{Lu}[\\p{L}'’.-]{1,24}(?: \\p{Lu}[\\p{L}'’.-]{0,24})?( \\| )", "$1[nome]$2");
+    }
+
+    /** Apaga o diagnóstico (botão na app). */
+    void clearDiag() {
+        diag.clear();
+        offerDiag.clear();
+        lastDiagText = "";
     }
 
     /** Guarda os últimos ecrãs lidos (só os que têm números) para perceber porque uma oferta não foi lida. */
@@ -172,7 +248,8 @@ public class OfferReaderService extends AccessibilityService {
         String head = "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
                 + " · eventos Uber " + evUber + " · Bolt " + evBolt
                 + " · Android " + android.os.Build.VERSION.RELEASE + " · " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
-        String shortTxt = text.length() > 3000 ? text.substring(0, 3000) + "…" : text;
+        String clean = redact(text);
+        String shortTxt = clean.length() > 3000 ? clean.substring(0, 3000) + "…" : clean;
         boolean hasDigit = shortTxt.matches("(?s).*\\d.*");
         if ((hasDigit || text.isEmpty()) && !shortTxt.equals(lastDiagText)) {
             lastDiagText = shortTxt;

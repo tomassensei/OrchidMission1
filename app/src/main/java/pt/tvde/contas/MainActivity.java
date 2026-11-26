@@ -101,7 +101,16 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public String lastOffer() { return Prefs.s(c, "lastOffer"); }
         @JavascriptInterface public String lastRaw() { return Prefs.s(c, "lastRaw"); }
-        @JavascriptInterface public String diag() { return appsUberBolt() + "\n" + Prefs.s(c, "diag"); }
+        @JavascriptInterface public String diag() {
+            String v = "?";
+            try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+            return "TVDE Contas " + v + "\n" + appsUberBolt() + "\n" + Prefs.s(c, "diag");
+        }
+        @JavascriptInterface public void clearDiag() {
+            Prefs.get(c).edit().remove("diag").remove("lastRaw").apply();
+            OfferReaderService s = OfferReaderService.instance;
+            if (s != null) s.clearDiag();
+        }
         @JavascriptInterface public boolean testCard() {
             OfferReaderService s = OfferReaderService.instance;
             if (s == null) return false;
