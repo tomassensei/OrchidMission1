@@ -50,6 +50,8 @@ public class OfferReaderService extends AccessibilityService {
     protected void onServiceConnected() {
         instance = this;
         connectedAt = System.currentTimeMillis();
+        Prefs.put(this, "diag", "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
+                + " · à espera de sinais da Uber/Bolt\n");
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         h = new Handler(Looper.getMainLooper());
         nf.setMinimumFractionDigits(2);
@@ -82,6 +84,10 @@ public class OfferReaderService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {
+        try { onEvent(e); } catch (Throwable t) { logError("evento", t); }
+    }
+
+    private void onEvent(AccessibilityEvent e) {
         if (e == null || e.getPackageName() == null) return;
         String pkg = e.getPackageName().toString();
         if (UBER.equals(pkg)) evUber++;
@@ -107,6 +113,10 @@ public class OfferReaderService extends AccessibilityService {
     }
 
     private void scanNow() {
+        try { scanNowInner(); } catch (Throwable t) { logError("leitura", t); }
+    }
+
+    private void scanNowInner() {
         String pkg = pendingPkg;
         if (pkg == null) return;
         lastScan = SystemClock.uptimeMillis();
@@ -205,11 +215,12 @@ public class OfferReaderService extends AccessibilityService {
                         android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, r.getColorSpace());
                         if (hw != null) { bmp = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false); hw.recycle(); }
                         hb.close();
-                    } catch (Exception ex) { bmp = null; }
+                    } catch (Throwable ex) { bmp = null; logError("imagem do ecrã", ex); }
                     if (bmp == null) { shotBusy = false; return; }
                     if (ocr == null) ocr = com.google.mlkit.vision.text.TextRecognition.getClient(
                             com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS);
                     final android.graphics.Bitmap img = bmp;
+                    try {
                     ocr.process(com.google.mlkit.vision.common.InputImage.fromBitmap(img, 0))
                             .addOnSuccessListener(res -> {
                                 StringBuilder sb = new StringBuilder();
@@ -218,16 +229,30 @@ public class OfferReaderService extends AccessibilityService {
                                         sb.append(l.getText()).append(" | ");
                                 img.recycle();
                                 shotBusy = false;
-                                handleText(plat, "leitura da imagem", sb.toString());
+                                try { handleText(plat, "leitura da imagem", sb.toString()); }
+                                catch (Throwable t) { logError("imagem", t); }
                             })
-                            .addOnFailureListener(ex -> { img.recycle(); shotBusy = false; });
+                            .addOnFailureListener(ex -> { img.recycle(); shotBusy = false; logError("reconhecer texto", ex); });
+                    } catch (Throwable t) { shotBusy = false; logError("reconhecer texto", t); }
                 }
                 @Override public void onFailure(int code) {
                     shotBusy = false;
                     recordDiag(plat, "imagem do ecrã recusada (código " + code + ")", "", null);
                 }
             });
-        } catch (Exception ex) { shotBusy = false; }
+        } catch (Throwable ex) { shotBusy = false; logError("imagem do ecrã", ex); }
+    }
+
+    /** Regista o último erro para aparecer no diagnóstico, em vez de o leitor parar. */
+    void logError(String where, Throwable t) {
+        try {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            t.printStackTrace(new java.io.PrintWriter(sw));
+            String st = sw.toString();
+            if (st.length() > 1200) st = st.substring(0, 1200);
+            String hhmm = new java.text.SimpleDateFormat("dd/MM HH:mm:ss", Locale.ROOT).format(new java.util.Date());
+            Prefs.put(this, "lastError", hhmm + " · " + where + "\n" + st);
+        } catch (Throwable ignored) { }
     }
 
     /** Tira do texto o nome de passageiro que a Bolt mostra a seguir à percentagem (ex.: "84% | Ivone |"). */

@@ -104,10 +104,16 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String diag() {
             String v = "?";
             try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
-            return "TVDE Contas " + v + "\n" + appsUberBolt() + "\n" + Prefs.s(c, "diag");
+            String err = Prefs.s(c, "lastError");
+            boolean on = readerEnabled(), run = OfferReaderService.instance != null;
+            String st = !on ? "DESLIGADO (ligue em Oferta › Ligar a leitura)"
+                    : run ? "LIGADO e a correr" : "LIGADO mas PARADO (desligue e volte a ligar)";
+            return "TVDE Contas " + v + " · leitor " + st + "\n"
+                    + appsUberBolt() + "\n"
+                    + (err.isEmpty() ? "" : "ÚLTIMO ERRO: " + err + "\n") + Prefs.s(c, "diag");
         }
         @JavascriptInterface public void clearDiag() {
-            Prefs.get(c).edit().remove("diag").remove("lastRaw").apply();
+            Prefs.get(c).edit().remove("diag").remove("lastRaw").remove("lastError").apply();
             OfferReaderService s = OfferReaderService.instance;
             if (s != null) s.clearDiag();
         }
