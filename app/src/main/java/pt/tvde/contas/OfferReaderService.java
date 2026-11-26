@@ -181,7 +181,7 @@ public class OfferReaderService extends AccessibilityService {
 
         String sig = o.signature();
         long t = System.currentTimeMillis();
-        if (sig.equals(lastSig) && t - lastShown < 45_000) return;  // mesma oferta, já mostrada
+        if (sig.equals(lastSig) && t - lastShown < 45_000) return o;  // mesma oferta, já mostrada
         lastSig = sig;
         lastShown = t;
         Prefs.put(this, "lastOffer", o.toJson(t));
