@@ -61,7 +61,7 @@ button.ghost{background:var(--card2);color:var(--ink)}button.red{background:#5b1
 .line{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed #24402f;font-size:15px}.line b{white-space:nowrap}
 .line:last-child{border:0}
 details.card summary{font-weight:800;cursor:pointer;min-height:32px;display:flex;align-items:center}
-nav{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#0b1f15;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#0b1f15;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(2,1fr);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
 nav button{background:transparent;color:var(--mute);font-size:11px;font-weight:800;padding:4px 0;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:12px}
 nav button.on{color:#fff;background:#173d29}nav svg{width:24px;height:24px}
 .ring{display:grid;grid-template-columns:132px minmax(0,1fr);gap:14px;align-items:center}
@@ -93,39 +93,6 @@ nav button.on{color:#fff;background:#173d29}nav svg{width:24px;height:24px}
 <div class="top"><h1><b>TVDE</b> Contas</h1><span id="ttl">Objetivo</span></div>
 <main>
 
-<!-- OBJETIVO -->
-<section class="tab" id="t-obj">
-<div class="hero"><div class="lab">Objetivo de hoje</div><div class="big" id="r_od">—</div>
-<div class="grid">
-<div class="kpi"><div class="lab">Objetivo do mês</div><div class="v" id="r_om"></div><div class="s">com IVA 6 %</div></div>
-<div class="kpi"><div class="lab">Despesa dia</div><div class="v" id="r_dd"></div><div class="s" id="r_ddx"></div></div>
-<div class="kpi"><div class="lab">Mínimo €/h</div><div class="v" id="r_mh"></div></div>
-<div class="kpi"><div class="lab">Mínimo €/km</div><div class="v" id="r_mk"></div></div>
-</div></div>
-<div class="card"><h2>Despesas por mês <small>vazio = não tem</small></h2>
-<div class="f"><label>Fixas<small>aluguer, seguro, contabilista…</small></label><input data-k="fix" inputmode="decimal"></div>
-<div class="f"><label>Repartidas — total<small>ex.: pneus 480</small></label><input data-k="repT" inputmode="decimal"></div>
-<div class="f"><label>…a repartir por (meses)</label><input data-k="repM" inputmode="numeric"></div>
-<div class="f"><label>Não fixas — média<small>lavagens, alimentação…</small></label><input data-k="nf" inputmode="decimal"></div>
-<div class="f"><label>Quero ganhar acima (%)<small>de origem 30 %</small></label><input data-k="pct" inputmode="decimal"></div>
-</div>
-<div class="card"><h2>Energia <small id="r_ekm"></small></h2>
-<div class="seg" data-seg="eTipo"><button data-v="comb">Combustão</button><button data-v="elet">Elétrico</button></div>
-<div class="f"><label id="l_cons">Consumo (L/100 km)</label><input data-k="cons" inputmode="decimal"></div>
-<div class="f"><label id="l_preco">Preço por litro (€)</label><input data-k="preco" inputmode="decimal"></div>
-<div class="f"><label>Parte que paga eu (%)<small>Slot = 100 %</small></label><input data-k="share" inputmode="decimal"></div>
-<div class="f"><label>Energia por mês</label><b id="r_emes" style="text-align:right"></b></div>
-</div>
-<div class="card"><h2>Este mês</h2>
-<div class="f"><label>Dias de trabalho do mês<small>sem folgas</small></label><input data-k="dias" inputmode="numeric"></div>
-<div class="f"><label>Média de horas por dia</label><input data-k="hDia" inputmode="decimal"></div>
-<div class="f"><label>Média de km por dia</label><input data-k="kmDia" inputmode="decimal"></div>
-<div class="f"><label>Já faturado este mês</label><input data-k="ja" inputmode="decimal"></div>
-<div class="f"><label>Dias de trabalho que faltam<small>incluindo hoje</small></label><input data-k="falta" inputmode="numeric"></div>
-</div>
-<p class="note">Objetivo do mês = (despesas + energia + o que quer ganhar) + IVA 6 %. Objetivo do dia = o que falta ÷ dias que faltam. Mínimos = custo do mês com IVA ÷ horas (ou km) do mês.</p>
-</section>
-
 <!-- OFERTA -->
 <section class="tab" id="t-of">
 <div class="hero" id="ofHero"></div>
@@ -156,51 +123,15 @@ nav button.on{color:#fff;background:#173d29}nav svg{width:24px;height:24px}
 <p class="note">O diagnóstico fica só neste telemóvel e tem as moradas das ofertas. Apague-o depois de o enviar.</p></details>
 <details style="margin-top:8px"><summary class="note">Última leitura (texto do ecrã)</summary><pre id="rdRaw" style="white-space:pre-wrap;font-size:12px;color:var(--mute);max-height:220px;overflow:auto"></pre>
 <button class="ghost" id="rdCopy">Copiar texto</button><p class="note">Se uma oferta vier mal lida, copie este texto e envie-o para afinar a leitura.</p></details></div>
-<div class="card"><h2>Mínimos usados <small id="minSrc"></small></h2>
-<div class="seg" data-seg="minMode"><button data-v="auto">Calculados</button><button data-v="mao">Escrever à mão</button></div>
+<div class="card"><h2>Os meus mínimos <small id="minSrc"></small></h2>
+<p class="note">O cartão fica verde quando a oferta paga pelo menos estes valores, e vermelho abaixo.</p>
 <div class="f"><label>Mínimo €/km</label><input data-k="mkM" inputmode="decimal"></div>
 <div class="f"><label>Mínimo €/h</label><input data-k="mhM" inputmode="decimal"></div>
-<div class="f"><label>Custo por km (€)<small>para o lucro; o manual usa o mínimo €/km</small></label><input data-k="ckM" inputmode="decimal"></div>
+<div class="f"><label>Custo por km (€)<small>energia + despesas por km, para o lucro</small></label><input data-k="ckM" inputmode="decimal"></div>
 </div>
 <div class="card"><h2>✈ Aeroporto hoje <small>2 grátis por app e tipo</small></h2>
 <div class="air" id="air"></div>
 <p class="note">Terminal 2 nunca conta. Reinicia à meia-noite (dia de calendário).</p></div>
-</section>
-
-<!-- FECHO -->
-<section class="tab" id="t-fe">
-<div class="hero"><div class="lab">Vai receber deste dia</div><div class="big" id="r_vr">—</div>
-<div class="grid">
-<div class="kpi"><div class="lab">Faturado (viagens + grat.)</div><div class="v" id="r_fat"></div></div>
-<div class="kpi"><div class="lab">Lucro do dia</div><div class="v" id="r_lu"></div><div class="s" id="r_lux"></div></div>
-<div class="kpi"><div class="lab">€/h</div><div class="v" id="r_eh"></div><div class="s" id="r_ehx"></div></div>
-<div class="kpi"><div class="lab">€/km</div><div class="v" id="r_ek"></div><div class="s" id="r_ekx"></div></div>
-</div><div id="r_obj" class="banner" style="background:rgba(0,0,0,.25)"></div></div>
-<div class="card"><h2>O dia</h2>
-<div class="f"><label>Horas trabalhadas</label><input data-k="dh" inputmode="decimal"></div>
-<div class="f"><label>Km a trabalhar</label><input data-k="dk" inputmode="decimal"></div>
-</div>
-<div class="card"><h2>Uber — Resumo do dia <small id="r_ut"></small></h2>
-<div class="f"><label>Tarifa líquida</label><input data-k="ut" inputmode="decimal"></div>
-<div class="f"><label>Gratificação</label><input data-k="ug" inputmode="decimal"></div>
-<div class="f"><label>Promoções<small>só se aparecerem</small></label><input data-k="up" inputmode="decimal"></div>
-<div class="f"><label>Outros rendimentos<small>acerto da semana anterior</small></label><input data-k="uo" inputmode="decimal"></div>
-<div class="f"><label>Reembolsos › Portagem</label><input data-k="ur" inputmode="decimal"></div>
-</div>
-<div class="card"><h2>Bolt — Análise do dia <small id="r_bv"></small></h2>
-<div class="f"><label>Ganhos<small>o total em baixo</small></label><input data-k="bg" inputmode="decimal"></div>
-<div class="f"><label>Portagem</label><input data-k="bp" inputmode="decimal"></div>
-<div class="f"><label>Gorjetas</label><input data-k="bt" inputmode="decimal"></div>
-<div class="f"><label>Campanhas e bónus</label><input data-k="bc" inputmode="decimal"></div>
-<div class="f"><label>Outros rendimentos<small>acertos</small></label><input data-k="bo" inputmode="decimal"></div>
-</div>
-<div class="card"><h2>Resumo do dia</h2><div id="resumo"></div></div>
-<details class="card"><summary>Dois turnos no mesmo dia da Uber/Bolt</summary>
-<div class="f"><label>Total do dia (dia completo)</label><input data-k="t2tot" inputmode="decimal"></div>
-<div class="f"><label>Já lançado noutro turno</label><input data-k="t2ja" inputmode="decimal"></div>
-<div id="r_t2" style="margin-top:8px"></div></details>
-<div class="row"><button class="red" id="limpaFe">Limpar o dia</button></div>
-<p class="note">€/h, €/km e lucro contam só viagens e gratificações. Acertos, campanhas e bónus contam no "Vai receber". Portagens são reembolso: só para conferir pagamentos.</p>
 </section>
 
 <!-- HOJE -->
@@ -231,31 +162,11 @@ nav button.on{color:#fff;background:#173d29}nav svg{width:24px;height:24px}
 <p class="note">Lei TVDE: máximo 10 h em quaisquer 24 h seguidas (todas as plataformas), pausa de 30 min (6 a 9 h) ou 45 min (mais de 9 h), 11 h de descanso entre dias. Os avisos com som, vibração e voz só tocam com esta app aberta no ecrã.</p>
 </section>
 
-<!-- SEMANA -->
-<section class="tab" id="t-se">
-<div class="hero" id="seHero"></div>
-<div class="seg" data-seg="wPlat"><button data-v="Uber">Uber</button><button data-v="Bolt">Bolt</button></div>
-<div class="card"><h2>Devia receber <small>segunda 4h → segunda 4h</small></h2>
-<div class="f"><label>Viagens da semana</label><input data-w="v" inputmode="decimal"></div>
-<div class="f"><label>Gratificações</label><input data-w="g" inputmode="decimal"></div>
-<div class="f"><label>Acertos<small>da semana anterior</small></label><input data-w="a" inputmode="decimal"></div>
-<div class="f"><label>Portagens</label><input data-w="p" inputmode="decimal"></div>
-</div>
-<div class="card"><h2>Descontos do operador <small>repetem-se todas as semanas</small></h2><div id="desc"></div>
-<button class="ghost" id="addDesc">+ Acrescentar desconto</button></div>
-<div class="card"><h2>Recebimentos</h2><div id="rec"></div>
-<button class="ghost" id="addRec">+ Acrescentar recebimento</button>
-<div class="f" style="margin-top:6px"><label>Taxa por levantamento antecipado (€)</label><input data-w="tx" inputmode="decimal"></div></div>
-<p class="note">À segunda-feira é o pagamento semanal; noutro dia é levantamento antecipado, com taxa. Percentagens de desconto aplicam-se às viagens + gratificações.</p>
-</section>
 </main>
 
 <nav>
 <button data-t="ho"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg>Hoje</button>
 <button data-t="of"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16l1.5-5a2 2 0 0 1 2-1.5h7a2 2 0 0 1 2 1.5L19 16v3h-2v-1.5H7V19H5z"/><circle cx="8" cy="15" r="1"/><circle cx="16" cy="15" r="1"/></svg>Oferta</button>
-<button data-t="fe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Fecho</button>
-<button data-t="obj"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>Objetivo</button>
-<button data-t="se"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>Semana</button>
 </nav>
 
 <script>
@@ -270,10 +181,10 @@ const pad=v=>String(v).padStart(2,'0'),toLocal=d=>`${d.getFullYear()}-${pad(d.ge
 const H=36e5;
 const now=new Date();now.setSeconds(0,0);
 const DEF={fix:'900',repT:'480',repM:'12',nf:'150',pct:'30',eTipo:'comb',cons:'5,5',preco:'1,65',share:'100',dias:'22',hDia:'9',kmDia:'220',ja:'0',falta:'22',
-plat:'Uber',fv:'',fmr:'',fkr:'',fmv:'',fkv:'',fld:'fv',hFat:'',hKmNow:'',fp:'0',fair:'',minMode:'auto',mkM:'0,85',mhM:'16',ckM:'0,85',
+plat:'Uber',fv:'',fmr:'',fkr:'',fmv:'',fkv:'',fld:'fv',hFat:'',hKmNow:'',fp:'0',fair:'',minMode:'mao',mkM:'0,44',mhM:'10,64',ckM:'0,44',
 dh:'9',dk:'210',ut:'112,40',ug:'3',up:'0',uo:'0',ur:'1,90',bg:'64,80',bp:'1,90',bt:'2',bc:'5',bo:'0',t2tot:'140,10',t2ja:'38,20',
 ha:toLocal(new Date(+now-15*H)),hb:toLocal(new Date(+now-6*H)),hd:'45',hn:toLocal(now),hw:'0',vinc:'trab',wPlat:'Uber',tab:'ho'};
-let S=Object.assign({},DEF,ls.get('jtc:s',{}));
+let S=Object.assign({},DEF,ls.get('jtc:s',{}));S.minMode='mao';if(S.tab!=='ho'&&S.tab!=='of')S.tab='ho';
 const save=()=>ls.set('jtc:s',S);
 const W0=()=>({v:'820',g:'24',a:'12',p:'9,50',tx:'0,20',desc:[{n:'Slot',v:'150',t:'€'},{n:'Comissão',v:'12',t:'%'}],rec:[{v:'100',d:'qui'},{v:'514,02',d:'seg'}]});
 let WK=ls.get('jtc:w',{Uber:W0(),Bolt:W0()});
@@ -288,14 +199,6 @@ function model(){
   const falta=Math.max(comIva-num(S.ja),0),od=falta/(num(S.falta)||1);
   return{d,rep,ekm,en,desp,ganho,comIva,od,dd:(num(S.fix)+rep)/d+num(S.nf)/d+en/d,mh:comIva/((num(S.hDia)||1)*d),mk:comIva/((num(S.kmDia)||1)*d)};
 }
-function rObj(){
-  const m=model();const el=S.eTipo==='elet';
-  $('l_cons').textContent=el?'Consumo (kWh/100 km)':'Consumo (L/100 km)';$('l_preco').textContent=el?'Preço do kWh (€)':'Preço por litro (€)';
-  $('r_od').textContent=eu(m.od);$('r_om').textContent=eu(m.comIva);$('r_dd').textContent=eu(m.dd);
-  $('r_ddx').textContent='quer ganhar '+eu(m.ganho)+'/mês';$('r_mh').textContent=eu(m.mh);$('r_mk').textContent=eu(m.mk);
-  $('r_emes').textContent=eu(m.en);$('r_ekm').textContent=dec(m.ekm)+' €/km';
-}
-
 /* ---------- OFERTA ---------- */
 const today=new Date().toDateString();let AIR=ls.get('jtc:air',{});if(AIR.d!==today)AIR={d:today,c:{Uber:{r:0,e:0},Bolt:{r:0,e:0}}};
 const saveAir=()=>ls.set('jtc:air',AIR);
@@ -334,26 +237,6 @@ $('aceitei').addEventListener('click',()=>{const v=num(S.fv);if(!v)return;if(S.f
   S.hFat=dec(num(S.hFat)+v).replace(/\./g,'');D.trips=(D.trips||[]).concat({t:Date.now(),v,p:S.plat});saveD();
   const b=$('aceitei');b.textContent='✓ Somado ao faturado';setTimeout(()=>b.textContent='✓ Aceitei',1400);resetOf();rHo()});
 $('recusei').addEventListener('click',resetOf);
-/* ---------- FECHO ---------- */
-function rFe(){
-  const m=model();
-  const uV=num(S.ut),uG=num(S.ug),uA=num(S.up)+num(S.uo),uP=num(S.ur);
-  const bV=num(S.bg)-num(S.bp)-num(S.bt)-num(S.bc)-num(S.bo),bG=num(S.bt),bA=num(S.bc)+num(S.bo),bP=num(S.bp);
-  const via=uV+bV,gr=uG+bG,ac=uA+bA,po=uP+bP,vr=via+gr+ac+po,fat=via+gr,lu=fat-m.dd;
-  const eh=num(S.dh)?fat/num(S.dh):0,ek=num(S.dk)?fat/num(S.dk):0;
-  $('r_ut').textContent='Totais '+eu(uV+uG+uA);$('r_bv').textContent='Viagens '+eu(bV);
-  $('r_vr').textContent=eu(vr);$('r_fat').textContent=eu(fat);
-  $('r_lu').textContent=(lu<0?'−':'')+eu(Math.abs(lu));$('r_lu').className='v '+(lu>=0?'ok':'bad');$('r_lux').textContent='despesa dia '+eu(m.dd);
-  $('r_eh').textContent=dec(eh);$('r_eh').className='v '+(eh>=m.mh?'ok':'bad');$('r_ehx').textContent='mín '+dec(m.mh);
-  $('r_ek').textContent=dec(ek);$('r_ek').className='v '+(ek>=m.mk?'ok':'bad');$('r_ekx').textContent='mín '+dec(m.mk);
-  const dif=fat-m.od;$('r_obj').innerHTML=dif>=0?`<span class="ok">Objetivo de hoje cumprido · ACIMA ${eu(dif)}</span>`:`<span class="bad">Faltaram ${eu(-dif)} para o objetivo (${eu(m.od)})</span>`;
-  const L=[['Viagens (Uber + Bolt)',via],['Gratificações',gr],['Acertos, campanhas e bónus',ac],['Portagens (reembolso)',po],['A Uber paga deste dia',uV+uG+uA+uP],['A Bolt paga deste dia',num(S.bg)]];
-  $('resumo').innerHTML=L.map(l=>`<div class="line"><span>${l[0]}</span><b>${eu(l[1])}</b></div>`).join('')+`<div class="line"><span><b>Vai receber</b></span><b class="ok">${eu(vr)}</b></div>`;
-  const t=num(S.t2tot),j=num(S.t2ja);
-  $('r_t2').innerHTML=t<j?`<div class="banner b-r">O total do dia não pode ser menor do que o já lançado.</div>`:`<div class="line"><span>Total do dia</span><b>${eu(t)}</b></div><div class="line"><span>Já lançado noutro turno</span><b>− ${eu(j)}</b></div><div class="line"><span><b>Fica neste turno</b></span><b class="ok">${eu(t-j)}</b></div>`;
-}
-$('limpaFe').addEventListener('click',()=>{['dh','dk','ut','ug','up','uo','ur','bg','bp','bt','bc','bo','t2tot','t2ja'].forEach(k=>S[k]='');save();fill();rFe()});
-
 const hh=d=>d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
 /* ---------- HOJE: contagem de horas ---------- */
 let D=ls.get('jtc:d',{st:'off',works:[],rests:[],log:[],alerts:{},undo:[]});
@@ -386,7 +269,7 @@ function act(kind){
     const w=D.works.reduce((a,x)=>a+x.e-x.s,0);S.dh=(w/H).toFixed(2).replace('.',',');
     if(D.kmStart&&num(S.hKmNow)>D.kmStart)S.dk=String(Math.round(num(S.hKmNow)-D.kmStart));
     if(num(S.hFat)>0&&!num(S.ut)&&!num(S.bg)){/* deixa o faturado ao vivo como referência */}
-    save();fill();rFe()}
+    save();fill()}
   saveD();rHo()}
 $('undo').addEventListener('click',()=>{if(!D.undo||!D.undo.length)return;const prev=D.undo.pop(),u=D.undo;D=prev;D.undo=u;saveD();rHo()});
 $('addPrev').addEventListener('click',()=>{const a=+new Date($('pa').value),b=+new Date($('pb').value),p=num($('pd').value)*6e4;if(!(b>a))return;
@@ -394,7 +277,7 @@ $('addPrev').addEventListener('click',()=>{const a=+new Date($('pa').value),b=+n
 {const n=new Date();n.setSeconds(0,0);$('pa').value=toLocal(new Date(+n-15*H));$('pb').value=toLocal(new Date(+n-6*H))}
 
 function rHo(){
-  const t=Date.now(),sg=S.vinc==='sg',m=model();
+  const t=Date.now(),sg=S.vinc==='sg',mi=mins(),m={mh:mi.mh,mk:mi.mk};
   const worked=D.works.reduce((a,x)=>a+x.e-x.s,0)+(D.st==='work'?t-D.ws:0);
   const rested=D.rests.reduce((a,x)=>a+x.e-x.s,0)+(D.st==='rest'?t-D.rs:0);
   const seguido=D.st==='work'?t-D.ws:0;
@@ -425,11 +308,11 @@ function rHo(){
     A.innerHTML=want==='off'?`<button class="mainbtn" data-act="start">▶ COMEÇAR O DIA</button>`
       :want==='work'?`<button class="mainbtn rest" data-act="rest">❚❚ FAZER DESCANSO</button>${sl('DESLIZA PARA TERMINAR O DIA')}`
       :want==='rest'?`<button class="mainbtn" data-act="back">▶ VOLTAR AO TRABALHO</button>${sl('DESLIZA PARA TERMINAR O DIA')}<p class="note" style="color:#cfe6d7">Terminando agora, o dia fecha com a hora do início do descanso.</p>`
-      :`<button class="mainbtn" data-act="start">▶ COMEÇAR NOVO DIA</button><p class="note" style="color:#cfe6d7">As horas e os km passaram para o separador Fecho.</p>`}
+      :`<button class="mainbtn" data-act="start">▶ COMEÇAR NOVO DIA</button>`}
   /* ganho ao vivo */
   const fat=num(S.hFat),wh=worked/H,kmd=D.kmStart&&num(S.hKmNow)>D.kmStart?num(S.hKmNow)-D.kmStart:0;
   const eh=wh>0.05?fat/wh:0,ek=kmd?fat/kmd:0;
-  $('hoLive').innerHTML=`<div class="kpi"><div class="lab">€/h do dia</div><div class="v ${fat?(eh>=m.mh?'ok':'bad'):''}">${fat&&wh>0.05?dec(eh):'—'}</div><div class="s">mín ${dec(m.mh)}</div></div><div class="kpi"><div class="lab">€/km do dia</div><div class="v ${fat&&ek?(ek>=m.mk?'ok':'bad'):''}">${fat&&ek?dec(ek):'—'}</div><div class="s">${kmd?Math.round(kmd)+' km':'escreva os km no início e agora'}</div></div><div class="kpi"><div class="lab">Objetivo de hoje</div><div class="v">${eu(m.od)}</div><div class="s">${fat>=m.od?'<span class="ok">cumprido</span>':'faltam '+eu(m.od-fat)}</div></div><div class="kpi"><div class="lab">Viagens aceites</div><div class="v">${(D.trips||[]).length}</div><div class="s">registadas na Oferta</div></div>`;
+  $('hoLive').innerHTML=`<div class="kpi"><div class="lab">€/h do dia</div><div class="v ${fat?(eh>=m.mh?'ok':'bad'):''}">${fat&&wh>0.05?dec(eh):'—'}</div><div class="s">mín ${dec(m.mh)}</div></div><div class="kpi"><div class="lab">€/km do dia</div><div class="v ${fat&&ek?(ek>=m.mk?'ok':'bad'):''}">${fat&&ek?dec(ek):'—'}</div><div class="s">${kmd?Math.round(kmd)+' km':'escreva os km no início e agora'}</div></div><div class="kpi"><div class="lab">Faturado hoje</div><div class="v">${eu(fat)}</div><div class="s">soma das viagens aceites</div></div><div class="kpi"><div class="lab">Viagens aceites</div><div class="v">${(D.trips||[]).length}</div><div class="s">registadas na Oferta</div></div>`;
   /* registo */
   const ev=[];if(D.start&&D.st!=='off'){ev.push(['Início do dia',D.start]);D.rests.forEach(r=>{ev.push(['Descanso',r.s]);ev.push(['Regresso',r.e])});if(D.st==='rest')ev.push(['Descanso',D.rs]);if(D.st==='done')ev.push(['Fim do dia',D.end])}
   $('hoLog').innerHTML=ev.length?ev.map(e=>`<div class="line"><span>${e[0]}</span><b>${hh(new Date(e[1]))}</b></div>`).join(''):'<p class="note">Ainda não começou o dia.</p>';
@@ -447,38 +330,16 @@ $('hoAct').addEventListener('input',e=>{if(e.target.id==='endSlide'&&+e.target.v
 $('hoAct').addEventListener('change',e=>{if(e.target.id==='endSlide')e.target.value=0});
 setInterval(()=>{if(S.tab==='ho'||D.st==='work')rHo()},1000);
 
-/* ---------- SEMANA ---------- */
-function rSe(){
-  const w=WK[S.wPlat];
-  document.querySelectorAll('[data-w]').forEach(i=>{if(document.activeElement!==i)i.value=w[i.dataset.w]??''});
-  if(!$('desc').contains(document.activeElement))$('desc').innerHTML=w.desc.map((d,i)=>`<div class="pay"><input class="nm" data-d="${i}" data-f="n" value="${esc(d.n)}" placeholder="Slot, aluguer, comissão…" aria-label="Nome do desconto"><div class="row" style="gap:4px;flex-wrap:nowrap"><input data-d="${i}" data-f="v" value="${esc(d.v)}" inputmode="decimal" aria-label="Valor"><select data-d="${i}" data-f="t" style="width:52px;padding:4px" aria-label="Unidade"><option ${d.t==='€'?'selected':''}>€</option><option ${d.t==='%'?'selected':''}>%</option></select></div><button class="x" data-dx="${i}" aria-label="Apagar desconto">✕</button></div>`).join('')||'<p class="note">Sem descontos (ex.: sócio-gerente).</p>';
-  if(!$('rec').contains(document.activeElement))$('rec').innerHTML=w.rec.map((r,i)=>`<div class="pay"><select data-r="${i}" data-f="d" aria-label="Dia">${['seg','ter','qua','qui','sex','sáb','dom'].map(x=>`<option value="${x}" ${r.d===x?'selected':''}>${x==='seg'?'Segunda (semanal)':x[0].toUpperCase()+x.slice(1)+' (antecipado)'}</option>`).join('')}</select><input data-r="${i}" data-f="v" value="${esc(r.v)}" inputmode="decimal" aria-label="Valor recebido"><button class="x" data-rx="${i}" aria-label="Apagar recebimento">✕</button></div>`).join('')||'<p class="note">Ainda sem recebimentos.</p>';
-  const base=num(w.v)+num(w.g),dev=base+num(w.a)+num(w.p);
-  const des=w.desc.reduce((s,d)=>s+(d.t==='%'?base*num(d.v)/100:num(d.v)),0),chega=dev-des;
-  const rec=w.rec.reduce((s,r)=>s+num(r.v),0),nAnt=w.rec.filter(r=>r.d!=='seg'&&num(r.v)>0).length,tx=nAnt*num(w.tx);
-  const dif=rec+tx-chega,ok=Math.abs(dif)<0.005;
-  $('seHero').innerHTML=`<div class="lab">${S.wPlat} · resultado da semana</div><div class="big ${ok?'ok':'bad'}">${ok?'✓ Bate certo':'⚠ '+eu(Math.abs(dif))}</div><div class="lab" style="margin-top:2px">${ok?(tx>0?`A diferença de ${eu(tx)} é só das taxas.`:'O que recebeu é o que devia chegar.'):(dif<0?'Recebeu menos do que devia.':'Recebeu mais do que devia.')}</div>
-  <div class="grid"><div class="kpi"><div class="lab">Devia receber</div><div class="v">${eu(dev)}</div></div><div class="kpi"><div class="lab">Descontos</div><div class="v">− ${eu(des)}</div></div><div class="kpi"><div class="lab">Devia chegar à conta</div><div class="v">${eu(chega)}</div></div><div class="kpi"><div class="lab">Recebido + taxas</div><div class="v">${eu(rec+tx)}</div><div class="s">${nAnt} levant. × ${eu(num(w.tx))}</div></div></div>`;
-}
-const tSe=document.getElementById('t-se');
-tSe.addEventListener('input',e=>{const i=e.target,w=WK[S.wPlat];
-  if(i.dataset.w)w[i.dataset.w]=i.value;else if(i.dataset.d)w.desc[i.dataset.d][i.dataset.f]=i.value;else if(i.dataset.r)w.rec[i.dataset.r][i.dataset.f]=i.value;else return;saveW();rSe()});
-tSe.addEventListener('change',e=>{if(e.target.tagName==='SELECT'){e.target.blur();rSe()}});
-tSe.addEventListener('click',e=>{const w=WK[S.wPlat],b=e.target.closest('button');if(!b)return;
-  if(b.dataset.dx)w.desc.splice(+b.dataset.dx,1);else if(b.dataset.rx)w.rec.splice(+b.dataset.rx,1);
-  else if(b.id==='addDesc')w.desc.push({n:'',v:'',t:'€'});else if(b.id==='addRec'){const d=['dom','seg','ter','qua','qui','sex','sáb'][new Date().getDay()];w.rec.push({v:'',d})}else return;
-  b.blur();saveW();rSe()});
-
 /* ---------- ligação geral ---------- */
-const R={obj:rObj,of:rOf,fe:rFe,ho:rHo,se:rSe};
-const all=()=>{rObj();rOf();rFe();rHo();rSe()};
+const R={of:rOf,ho:rHo};
+const all=()=>{rOf();rHo()};
 function fill(){document.querySelectorAll('[data-k]').forEach(i=>{if(document.activeElement!==i||i.tagName==='SELECT')i.value=S[i.dataset.k]??''});
   document.querySelectorAll('[data-seg]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.classList.toggle('on',S[g.dataset.seg]===b.dataset.v)))}
 document.addEventListener('input',e=>{const k=e.target.dataset.k;if(!k)return;S[k]=e.target.value;save();all()});
 document.addEventListener('change',e=>{const k=e.target.dataset.k;if(!k)return;S[k]=e.target.value;save();all()});
 document.querySelectorAll('[data-seg]').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S[g.dataset.seg]=b.dataset.v;save();fill();all()}));
 document.querySelectorAll('input[inputmode]').forEach(i=>i.addEventListener('focus',()=>setTimeout(()=>i.select(),0)));
-const NAMES={ho:'Hoje',of:'Oferta',fe:'Fecho do dia',obj:'Objetivo',se:'Semana · pagamentos'};
+const NAMES={ho:'Hoje',of:'Oferta'};
 function go(t){if(!NAMES[t])t='ho';S.tab=t;save();document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('on',s.id==='t-'+t));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));$('ttl').textContent=NAMES[t];R[t]();window.scrollTo(0,0)}
 document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.t)});
