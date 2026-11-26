@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private TextToSpeech tts;
     private boolean ttsReady;
+    private WebView printing;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -100,6 +101,46 @@ public class MainActivity extends Activity {
             Prefs.put(c, "cardSecs", secs);
         }
         @JavascriptInterface public String lastOffer() { return Prefs.s(c, "lastOffer"); }
+        @JavascriptInterface public String offers() { String v = Prefs.s(c, "offers"); return v.isEmpty() ? "[]" : v; }
+        @JavascriptInterface public void setCardPrefs(float secs, float fontScale, String good, String mid, String bad) {
+            Prefs.put(c, "cardSecs", secs);
+            Prefs.put(c, "fontScale", fontScale);
+            Prefs.put(c, "vGood", good);
+            Prefs.put(c, "vMid", mid);
+            Prefs.put(c, "vBad", bad);
+        }
+        @JavascriptInterface public void setAirport(String day, float uber, float bolt) {
+            Prefs.put(c, "airDay", day);
+            Prefs.put(c, "airUber", uber);
+            Prefs.put(c, "airBolt", bolt);
+        }
+        /** Abre o ecrã de imprimir do Android com a página dada (escolher "Guardar como PDF" ou partilhar). */
+        @JavascriptInterface public void printHtml(String html, String name) {
+            runOnUiThread(() -> {
+                WebView pw = new WebView(MainActivity.this);
+                pw.setWebViewClient(new WebViewClient() {
+                    @Override public void onPageFinished(WebView v, String url) {
+                        android.print.PrintManager pm = (android.print.PrintManager) getSystemService(Context.PRINT_SERVICE);
+                        pm.print(name, v.createPrintDocumentAdapter(name),
+                                new android.print.PrintAttributes.Builder()
+                                        .setMediaSize(android.print.PrintAttributes.MediaSize.ISO_A4).build());
+                        printing = null;
+                    }
+                });
+                printing = pw;   // mantém a página viva até imprimir
+                pw.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+            });
+        }
+        /** Partilha texto (ex.: o mapa do mês em CSV) por WhatsApp, email, Drive… */
+        @JavascriptInterface public void shareText(String title, String text) {
+            Intent i = new Intent(Intent.ACTION_SEND);
+            i.setType("text/plain");
+            i.putExtra(Intent.EXTRA_SUBJECT, title);
+            i.putExtra(Intent.EXTRA_TEXT, text);
+            Intent ch = Intent.createChooser(i, title);
+            ch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(ch);
+        }
         @JavascriptInterface public String lastRaw() { return Prefs.s(c, "lastRaw"); }
         @JavascriptInterface public String diag() {
             String v = "?";

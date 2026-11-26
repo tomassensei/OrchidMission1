@@ -207,6 +207,13 @@ public class OfferReaderService extends AccessibilityService {
         lastSig = sig;
         lastShown = t;
         Prefs.put(this, "lastOffer", o.toJson(t));
+        // histórico para o ecrã Viagens (últimas 300)
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(Prefs.s(this, "offers").isEmpty() ? "[]" : Prefs.s(this, "offers"));
+            arr.put(new org.json.JSONObject(o.toJson(t)));
+            while (arr.length() > 300) arr.remove(0);
+            Prefs.put(this, "offers", arr.toString());
+        } catch (Exception ex) { logError("histórico", ex); }
         if (Prefs.b(this, "readerCard", true)) showCard(o);
         return o;
     }
@@ -385,7 +392,12 @@ public class OfferReaderService extends AccessibilityService {
             bg.setStroke(dp(2), hasMin ? (gk && gh ? green : (gk || gh ? Color.parseColor("#FACC15") : red)) : Color.GRAY);
             box.setBackground(bg);
 
-            if (o.airport) box.addView(banner("✈ AEROPORTO — veja quantas já fez hoje na app", "#F59E0B", Color.BLACK));
+            if (o.airport) {
+                String today = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new java.util.Date());
+                int n = today.equals(Prefs.s(this, "airDay")) ? (int) Prefs.f(this, "air" + o.platform, 0f) : 0;
+                box.addView(banner(n >= 2 ? "✈ " + (n + 1) + ".ª VIAGEM DO AEROPORTO HOJE · TEM DE PAGAR O ACESSO"
+                        : "✈ Aeroporto · já fez " + n + " hoje na " + o.platform + " (2 grátis)", "#F59E0B", Color.BLACK));
+            }
             box.addView(line(o.platform.toUpperCase() + " · " + eu(o.value), 13, Color.parseColor("#B7D7C3"), false));
 
             LinearLayout row = new LinearLayout(this);
@@ -420,12 +432,13 @@ public class OfferReaderService extends AccessibilityService {
             } catch (Exception ignored) { return; }
 
             int secs = (int) Prefs.f(this, "cardSecs", 15f);
-            h.postDelayed(hide, secs * 1000L);
+            if (secs > 0) h.postDelayed(hide, secs * 1000L);   // 0 = até eu fechar
 
             if (hasMin) {
                 if (!(gk && gh)) vibrate();
                 if (Prefs.b(this, "voice", true) && ttsReady) {
-                    String phrase = gk && gh ? "Viagem boa" : (gk || gh ? "Analisar" : "Recusar");
+                    String phrase = gk && gh ? Prefs.s(this, "vGood") : (gk || gh ? Prefs.s(this, "vMid") : Prefs.s(this, "vBad"));
+                    if (phrase.isEmpty()) phrase = gk && gh ? "Viagem boa" : (gk || gh ? "Analisar" : "Recusar");
                     if (o.stops > 0) phrase += ". Atenção, tem paragem";
                     tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "offer");
                 }
