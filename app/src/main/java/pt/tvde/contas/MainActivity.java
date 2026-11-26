@@ -86,6 +86,64 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
+    static final int REQ_TREE = 11, REQ_OPEN = 12;
+
+    private void js(String fn, String arg) {
+        String a = org.json.JSONObject.quote(arg == null ? "" : arg);
+        runOnUiThread(() -> web.evaluateJavascript("window." + fn + "&&window." + fn + "(" + a + ")", null));
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (res != RESULT_OK || data == null || data.getData() == null) return;
+        android.net.Uri u = data.getData();
+        if (req == REQ_TREE) {
+            try { getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception ignored) { }
+            Prefs.put(this, "bkTree", u.toString());
+            js("onBackupFolder", folderName());
+        } else if (req == REQ_OPEN) {
+            StringBuilder sb = new StringBuilder();
+            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(getContentResolver().openInputStream(u), "UTF-8"))) {
+                String l; while ((l = br.readLine()) != null) sb.append(l).append('\n');
+            } catch (Exception e) { js("onRestore", ""); return; }
+            js("onRestore", sb.toString());
+        }
+    }
+
+    String folderName() {
+        String t = Prefs.s(this, "bkTree");
+        if (t.isEmpty()) return "";
+        String d = android.net.Uri.decode(t);
+        int i = d.lastIndexOf(':');
+        return i >= 0 ? d.substring(i + 1) : d;
+    }
+
+    /** Escreve a cópia na pasta escolhida e guarda só as 30 mais recentes. */
+    String writeBackup(String json) {
+        String t = Prefs.s(this, "bkTree");
+        if (t.isEmpty()) return "sem pasta";
+        try {
+            android.net.Uri tree = android.net.Uri.parse(t);
+            android.net.Uri dir = android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree));
+            String name = "TVDEContas_copia_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.ROOT).format(new java.util.Date()) + ".json";
+            android.net.Uri f = android.provider.DocumentsContract.createDocument(getContentResolver(), dir, "application/json", name);
+            if (f == null) return "não deu para criar o ficheiro";
+            try (java.io.OutputStream os = getContentResolver().openOutputStream(f)) { os.write(json.getBytes("UTF-8")); }
+            // guarda as últimas 30
+            android.net.Uri kids = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, android.provider.DocumentsContract.getTreeDocumentId(tree));
+            java.util.List<String[]> list = new java.util.ArrayList<>();
+            try (android.database.Cursor c = getContentResolver().query(kids, new String[]{
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID, android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null, null, null)) {
+                while (c != null && c.moveToNext()) if (c.getString(1).startsWith("TVDEContas_copia_")) list.add(new String[]{c.getString(0), c.getString(1)});
+            }
+            list.sort((a, b) -> a[1].compareTo(b[1]));
+            for (int i = 0; i < list.size() - 30; i++)
+                android.provider.DocumentsContract.deleteDocument(getContentResolver(), android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, list.get(i)[0]));
+            return "ok";
+        } catch (Exception e) { return "erro: " + e.getMessage(); }
+    }
+
     /** Funções que a página pode chamar com window.Android.… */
     final class Bridge {
         final Context c = MainActivity.this;
@@ -101,6 +159,36 @@ public class MainActivity extends Activity {
             Prefs.put(c, "cardSecs", secs);
         }
         @JavascriptInterface public String lastOffer() { return Prefs.s(c, "lastOffer"); }
+        @JavascriptInterface public void backupPickFolder() {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            startActivityForResult(i, REQ_TREE);
+        }
+        @JavascriptInterface public String backupFolder() { return folderName(); }
+        @JavascriptInterface public String backupWrite(String json) { return writeBackup(json); }
+        @JavascriptInterface public void backupRestore() {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            startActivityForResult(i, REQ_OPEN);
+        }
+        @JavascriptInterface public void restoreOffers(String json) { Prefs.put(c, "offers", json); }
+        /** Lê o QR de uma fatura com o leitor da Google (não precisa de permissão da câmara). */
+        @JavascriptInterface public void scanQr() {
+            runOnUiThread(() -> {
+                try {
+                    com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(MainActivity.this)
+                            .startScan()
+                            .addOnSuccessListener(b -> js("onQr", b.getRawValue()))
+                            .addOnFailureListener(e -> js("onQr", ""))
+                            .addOnCanceledListener(() -> js("onQr", ""));
+                } catch (Throwable t) { js("onQr", ""); }
+            });
+        }
+        @JavascriptInterface public void setBubble(boolean on, float size) { Prefs.put(c, "bubble", on); Prefs.put(c, "bubbleSize", size); }
+        @JavascriptInterface public void setWorking(boolean on) { Prefs.put(c, "working", on); }
+        @JavascriptInterface public void setPrints(boolean on, float days) { Prefs.put(c, "prints", on); Prefs.put(c, "printDays", days); }
+        @JavascriptInterface public void setZones(String json) { Prefs.put(c, "zones", json); }
         @JavascriptInterface public String offers() { String v = Prefs.s(c, "offers"); return v.isEmpty() ? "[]" : v; }
         @JavascriptInterface public void setCardPrefs(float secs, float fontScale, String good, String mid, String bad) {
             Prefs.put(c, "cardSecs", secs);

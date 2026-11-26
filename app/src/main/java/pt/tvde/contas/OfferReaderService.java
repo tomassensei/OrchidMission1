@@ -52,8 +52,9 @@ public class OfferReaderService extends AccessibilityService {
         connectedAt = System.currentTimeMillis();
         Prefs.put(this, "diag", "Ligado desde " + new java.text.SimpleDateFormat("dd/MM HH:mm", Locale.ROOT).format(new java.util.Date(connectedAt))
                 + " · à espera de sinais da Uber/Bolt\n");
-        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         h = new Handler(Looper.getMainLooper());
+        cleanPrints();
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         nf.setMinimumFractionDigits(2);
         nf.setMaximumFractionDigits(2);
         tts = new TextToSpeech(this, status -> {
@@ -100,6 +101,7 @@ public class OfferReaderService extends AccessibilityService {
         else return;
         lastEventAt = System.currentTimeMillis();
         pendingPkg = pkg;
+        bubbleTick();
         try { AccessibilityNodeInfo src = e.getSource(); if (src != null) lastSource = src; } catch (Exception ignored) { }
         // o próprio sinal traz texto quando abre uma janela nova (ex.: a oferta flutuante)
         StringBuilder et = new StringBuilder();
@@ -214,8 +216,73 @@ public class OfferReaderService extends AccessibilityService {
             while (arr.length() > 300) arr.remove(0);
             Prefs.put(this, "offers", arr.toString());
         } catch (Exception ex) { logError("histórico", ex); }
-        if (Prefs.b(this, "readerCard", true)) showCard(o);
+        if (Prefs.b(this, "readerCard", true)) {
+            final String mySig = sig;
+            org.json.JSONArray zs = Zones.load(this);
+            Zones.Hit zr = Zones.byRules(zs, o.pickupAddr), zd = Zones.byRules(zs, o.destAddr);
+            showCard(o, zr, zd, true);
+            // zonas desenhadas: procura a morada no mapa (internet) e atualiza o cartão
+            if (Zones.hasPolygons(zs) && (!o.pickupAddr.isEmpty() || !o.destAddr.isEmpty())) {
+                bg.execute(() -> {
+                    Zones.Hit pr = Zones.byPolygons(zs, Zones.geocode(o.pickupAddr));
+                    Zones.Hit pd = Zones.byPolygons(zs, Zones.geocode(o.destAddr));
+                    Zones.Hit fr = worse(zr, pr), fd = worse(zd, pd);
+                    if (fr != zr || fd != zd) h.post(() -> { if (mySig.equals(lastSig) && card != null) showCard(o, fr, fd, false); });
+                });
+            }
+        }
+        if (Prefs.b(this, "prints", false)) h.postDelayed(this::savePrint, 700);
         return o;
+    }
+
+    private final java.util.concurrent.ExecutorService bg = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    private static int rank(Zones.Hit z) { return z == null ? 0 : "p".equals(z.level) ? 3 : "a".equals(z.level) ? 2 : "b".equals(z.level) ? 1 : 0; }
+    private static Zones.Hit worse(Zones.Hit a, Zones.Hit b) { return rank(b) > rank(a) ? b : a; }
+
+    /** Guarda um print da oferta em Fotos › TVDEContas (opção da Config). */
+    private void savePrint() {
+        if (android.os.Build.VERSION.SDK_INT < 30) return;
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+                @Override public void onSuccess(ScreenshotResult r) {
+                    try {
+                        android.hardware.HardwareBuffer hb = r.getHardwareBuffer();
+                        android.graphics.Bitmap hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, r.getColorSpace());
+                        android.graphics.Bitmap bmp = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false);
+                        hw.recycle(); hb.close();
+                        bg.execute(() -> {
+                            try {
+                                android.content.ContentValues cv = new android.content.ContentValues();
+                                cv.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "oferta_" + new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ROOT).format(new java.util.Date()) + ".jpg");
+                                cv.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                                cv.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/TVDEContas");
+                                android.net.Uri u = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                                if (u != null) try (java.io.OutputStream os = getContentResolver().openOutputStream(u)) {
+                                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, os);
+                                }
+                            } catch (Throwable t) { logError("guardar print", t); }
+                            bmp.recycle();
+                        });
+                    } catch (Throwable t) { logError("print", t); }
+                }
+                @Override public void onFailure(int code) { }
+            });
+        } catch (Throwable t) { logError("print", t); }
+    }
+
+    /** Apaga os prints mais antigos do que os dias escolhidos (0 = nunca). */
+    private void cleanPrints() {
+        int days = (int) Prefs.f(this, "printDays", 15f);
+        if (days <= 0 || android.os.Build.VERSION.SDK_INT < 30) return;
+        bg.execute(() -> {
+            try {
+                long lim = System.currentTimeMillis() / 1000 - days * 86400L;
+                getContentResolver().delete(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        android.provider.MediaStore.Images.Media.RELATIVE_PATH + " LIKE ? AND " + android.provider.MediaStore.Images.Media.DATE_ADDED + " < ?",
+                        new String[]{"Pictures/TVDEContas%", String.valueOf(lim)});
+            } catch (Throwable t) { logError("apagar prints", t); }
+        });
     }
 
     /** Tira uma imagem do ecrã (só na memória, nunca é guardada) e lê o texto dela no próprio telemóvel. */
@@ -347,7 +414,7 @@ public class OfferReaderService extends AccessibilityService {
     /** Mostra um cartão de exemplo, para confirmar que o cartão consegue aparecer por cima. */
     void showTest() {
         OfferParser.Offer o = OfferParser.parse("Teste | 9,80 € | 6 min (2,5 km) | 18 min (7,2 km)", "Teste");
-        if (o != null) showCard(o);
+        if (o != null) showCard(o, null, null, true);
     }
 
     private void collect(AccessibilityNodeInfo n, StringBuilder sb, int depth) {
@@ -370,7 +437,7 @@ public class OfferReaderService extends AccessibilityService {
 
     private String eu(double v) { return nf.format(v) + " €"; }
 
-    private void showCard(OfferParser.Offer o) {
+    private void showCard(OfferParser.Offer o, Zones.Hit zr, Zones.Hit zd, boolean speak) {
         h.post(() -> {
             hideCard();
             float mk = Prefs.f(this, "minKm", 0f);
@@ -413,6 +480,8 @@ public class OfferReaderService extends AccessibilityService {
             if (ck > 0) box.addView(line("Lucro " + (lucro >= 0 ? "+" : "−") + eu(Math.abs(lucro)), 16, lucro >= 0 ? green : red, true));
             if (!hasMin) box.addView(line("Abra a TVDE Contas uma vez para carregar os seus mínimos.", 12, white, false));
             if (o.stops > 0) box.addView(banner("⚠ Atenção: viagem com " + o.stops + (o.stops == 1 ? " paragem" : " paragens"), "#F05252", Color.WHITE));
+            if (!o.pickupAddr.isEmpty()) box.addView(zoneLine("RECOLHA", o.pickupAddr, zr));
+            if (!o.destAddr.isEmpty()) box.addView(zoneLine("DESTINO", o.destAddr, zd));
 
             WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -434,16 +503,96 @@ public class OfferReaderService extends AccessibilityService {
             int secs = (int) Prefs.f(this, "cardSecs", 15f);
             if (secs > 0) h.postDelayed(hide, secs * 1000L);   // 0 = até eu fechar
 
+            boolean danger = (zr != null && "p".equals(zr.level)) || (zd != null && "p".equals(zd.level));
+            if (danger) vibrate();
+            if (!speak) {
+                if (danger && Prefs.b(this, "voice", true) && ttsReady) tts.speak("Atenção, zona perigosa", TextToSpeech.QUEUE_FLUSH, null, "zone");
+                return;
+            }
             if (hasMin) {
                 if (!(gk && gh)) vibrate();
                 if (Prefs.b(this, "voice", true) && ttsReady) {
                     String phrase = gk && gh ? Prefs.s(this, "vGood") : (gk || gh ? Prefs.s(this, "vMid") : Prefs.s(this, "vBad"));
                     if (phrase.isEmpty()) phrase = gk && gh ? "Viagem boa" : (gk || gh ? "Analisar" : "Recusar");
                     if (o.stops > 0) phrase += ". Atenção, tem paragem";
+                    if (danger) phrase += ". Atenção, zona perigosa";
                     tts.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "offer");
                 }
             }
         });
+    }
+
+    private TextView zoneLine(String what, String addr, Zones.Hit z) {
+        String lvl = z == null ? "" : "p".equals(z.level) ? "  🔴 " : "a".equals(z.level) ? "  🟠 " : "  🟢 ";
+        TextView t = line(what + " · " + addr + (z == null ? "" : lvl + z.name), 12,
+                z == null ? Color.parseColor("#B7D7C3") : "p".equals(z.level) ? Color.parseColor("#FF7A7A")
+                        : "a".equals(z.level) ? Color.parseColor("#FBBF24") : Color.parseColor("#4ADE80"), z != null);
+        t.setMaxLines(2);
+        return t;
+    }
+
+    /* ---------- botão flutuante "TVDE" (aparece com a Uber/Bolt abertas, durante o dia de trabalho) ---------- */
+    private View bubble;
+    private final Runnable hideBubble = this::removeBubble;
+
+    void bubbleTick() {
+        if (!Prefs.b(this, "bubble", false) || !Prefs.b(this, "working", false)) { removeBubble(); return; }
+        if (bubble == null) addBubble();
+        h.removeCallbacks(hideBubble);
+        h.postDelayed(hideBubble, 20_000);   // some se a Uber/Bolt deixarem de dar sinal
+    }
+
+    private void addBubble() {
+        try {
+            int size = dp((int) Prefs.f(this, "bubbleSize", 56f));
+            TextView b = new TextView(this);
+            b.setText("TVDE");
+            b.setTextColor(Color.WHITE);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setGravity(Gravity.CENTER);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_PX, size * 0.24f);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(Color.parseColor("#10B981"));
+            g.setStroke(dp(3), Color.parseColor("#0B1F15"));
+            b.setBackground(g);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(size, size,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.x = (int) Prefs.f(this, "bubbleX", 0f);
+            lp.y = (int) Prefs.f(this, "bubbleY", dp(300));
+            final float[] st = new float[4];
+            final boolean[] moved = {false};
+            b.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        st[0] = ev.getRawX(); st[1] = ev.getRawY(); st[2] = lp.x; st[3] = lp.y; moved[0] = false; return true;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float dx = ev.getRawX() - st[0], dy = ev.getRawY() - st[1];
+                        if (Math.abs(dx) + Math.abs(dy) > dp(8)) moved[0] = true;
+                        lp.x = (int) (st[2] + dx); lp.y = (int) (st[3] + dy);
+                        try { wm.updateViewLayout(v, lp); } catch (Exception ignored) { }
+                        return true;
+                    case android.view.MotionEvent.ACTION_UP:
+                        if (!moved[0]) {
+                            android.content.Intent i = new android.content.Intent(this, MainActivity.class);
+                            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK | android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                            startActivity(i);
+                        } else { Prefs.put(this, "bubbleX", (float) lp.x); Prefs.put(this, "bubbleY", (float) lp.y); }
+                        return true;
+                }
+                return false;
+            });
+            wm.addView(b, lp);
+            bubble = b;
+        } catch (Throwable t) { logError("botão flutuante", t); }
+    }
+
+    private void removeBubble() {
+        h.removeCallbacks(hideBubble);
+        if (bubble != null) { try { wm.removeView(bubble); } catch (Exception ignored) { } bubble = null; }
     }
 
     private void hideCard() {
@@ -508,6 +657,7 @@ public class OfferReaderService extends AccessibilityService {
     public void onDestroy() {
         instance = null;
         h.removeCallbacks(scan);
+        removeBubble();
         hideCard();
         if (tts != null) tts.shutdown();
         super.onDestroy();

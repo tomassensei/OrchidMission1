@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0a120e">
 <title>TVDE Contas</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<script src="leaflet/leaflet.js"></script>
 <style>
 /* VOICE: calmo e direto, para usar no carro entre viagens
    IDEA: o ecrã da JornadaTVDE do manual — arco das 10 h, botão amarelo, barra vermelha para deslizar
@@ -90,13 +92,17 @@ nav button.on{color:var(--g)}nav button.on svg{background:#123826;border-radius:
 nav svg{width:40px;height:28px;padding:3px 8px}
 .alert{position:fixed;left:10px;right:10px;top:calc(10px + env(safe-area-inset-top));z-index:30;background:var(--r);color:#fff;border-radius:14px;padding:12px;font-weight:800;display:none;gap:10px;align-items:center;justify-content:space-between}
 .alert.on{display:flex}.alert.o{background:var(--o);color:#1b1200}
+#map{height:58vh;border-radius:14px;margin:8px 0;background:#0b1511}
+.lvl{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}.lvl.p{background:#ef4444}.lvl.a{background:#f59e0b}.lvl.b{background:#34d399}
+.wiz{background:#0f2a1f;border:1px solid #1d4d37;border-radius:14px;padding:12px;margin:10px 0}.wiz .imp{background:#ef4444;color:#fff;border-radius:6px;font-size:11px;font-weight:800;padding:1px 6px;margin-left:6px}
+.sheet .in.full{max-height:100vh;height:100vh;border-radius:0}
 @media(prefers-reduced-motion:no-preference){.sheet.on .in{animation:up .2s ease}@keyframes up{from{transform:translateY(30px);opacity:.6}}}
 </style>
 </head>
 <body>
 <div class="alert" id="alert"><span id="alertTxt"></span><button class="ghost" id="alertOk" style="min-height:36px">OK</button></div>
 
-<div class="top"><h1><b>TVDE</b> Contas</h1><div style="display:flex;gap:6px"><button class="pill" id="goViagens">🚗 Viagens</button></div></div>
+<div class="top"><h1><b>TVDE</b> Contas</h1><div style="display:flex;gap:6px"><button class="pill" id="goFatura">🧾 Lançar fatura</button><button class="pill" id="goViagens">🚗 Viagens</button></div></div>
 <div class="hello" id="hello"></div>
 
 <main>
@@ -181,7 +187,8 @@ const CFG0={nome:'',viatura:'',matricula:'',apps:['Uber','Bolt'],folgasSem:[],fo
  eTipo:'comb',ePaga:100,eCons:5.5,ePreco:1.65,eCasa:0.15,eFora:0.45,eOnde:'casa',luzEmpresa:false,
  fixas:[{n:'Aluguer / slot',v:''},{n:'Seguro',v:''}],repart:[{n:'Pneus',v:'',m:12}],naoFixas:[{n:'Lavagens',v:''}],
  ganhar:30,minMode:'auto',mkM:0.44,mhM:10.64,kmDia:200,hDia:9,
- cSecs:15,cFont:20,voz:true,vGood:'Viagem boa',vMid:'Analisar',vBad:'Recusar',codigo:'0000'};
+ cSecs:15,cFont:20,voz:true,vGood:'Viagem boa',vMid:'Analisar',vBad:'Recusar',codigo:'0000',
+ bubble:false,bubbleSize:56,prints:false,printDays:15,zones:[],faturas:[],forn:{},descontos:{Uber:[],Bolt:[]},receb:{},taxa:0.2,lastBackup:0,wizDone:false,wizLater:{}};
 let C=Object.assign({},CFG0,ls.get('jt2:cfg',{}));
 let DAYS=ls.get('jt2:days',{});           // 'AAAA-MM-DD' -> dia
 let CUR=ls.get('jt2:cur',null);          // dia aberto (chave) ou null
@@ -248,14 +255,14 @@ function lastEnd(){let m=0;for(const k in DAYS){const d=DAYS[k];if(k!==CUR||stat
 
 /* ================= nativo ================= */
 function pushNative(){if(!A)return;try{const m=model();A.setMinimos(m.mk,m.mh,m.mk);
-  A.setCardPrefs(num(C.cSecs),num(C.cFont)/20,C.vGood||'',C.vMid||'',C.vBad||'');A.setReaderPrefs(true,!!C.voz,num(C.cSecs))}catch(e){}}
+  A.setCardPrefs(num(C.cSecs),num(C.cFont)/20,C.vGood||'',C.vMid||'',C.vBad||'');A.setReaderPrefs(true,!!C.voz,num(C.cSecs));A.setBubble(!!C.bubble,num(C.bubbleSize)||56);A.setPrints(!!C.prints,num(C.printDays));A.setZones(JSON.stringify(C.zones||[]))}catch(e){}}
 function say(t){try{if(A){A.speak(t);return}const u=new SpeechSynthesisUtterance(t);u.lang='pt-PT';speechSynthesis.speak(u)}catch(e){}}
 function vib(){try{navigator.vibrate&&navigator.vibrate([300,150,300])}catch(e){}}
 function keep(on){try{A&&A.keepScreen(!!on)}catch(e){}}
 
 /* ================= folhas (passos) ================= */
 function sheet(html){$('sheetIn').innerHTML=html;$('sheet').classList.add('on')}
-function closeSheet(){$('sheet').classList.remove('on');$('sheetIn').innerHTML=''}
+function closeSheet(){$('sheet').classList.remove('on');$('sheetIn').classList.remove('full');$('sheetIn').innerHTML=''}
 $('sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
 const slideHTML=(id,txt,cls='')=>`<div class="slidewrap"><input type="range" class="slide ${cls}" id="${id}" min="0" max="100" value="0" aria-label="${txt}"><span>${txt} »</span></div>`;
 function onSlide(id,fn){const s=$(id);if(!s)return;s.addEventListener('input',()=>{if(+s.value>=95){s.value=0;fn()}});s.addEventListener('change',()=>s.value=0)}
@@ -316,7 +323,7 @@ function openEnd(){
   onSlide('eGo',()=>{snap();const{u,b}=readFat();d.fatU=u;d.fatB=b;d.obs=$('eObs').value;
     if(rest&&mode==='rs'){const r=[...d.ev].reverse().find(e=>e.type==='rest');d.ev.pop();d.ev.push({t:r.t,type:'end',km:r.km})}
     else{if(rest)d.ev.push({t:atTime($('eH').value),type:'back'});d.ev.push({t:atTime($('eH').value),type:'end',km:$('eKm').value,kwh:$('eKwh')?.value||''})}
-    const k=CUR;CUR=null;saveD();keep(false);closeSheet();render();openReport(k)})}
+    const k=CUR;CUR=null;saveD();keep(false);closeSheet();render();doBackup(true);openReport(k)})}
 
 /* ================= relatório do dia (cap. 5.4) ================= */
 function dayStats(k){const d=DAYS[k];if(!d)return null;const{w,r}=periods(d,k===CUR?Date.now():0),work=sum(w),rest=sum(r),km=kmWork(d),fat=faturado(k),m=model(k);
@@ -368,8 +375,10 @@ let alerted={};
 function alertMsg(key,txt,o){if(alerted[key])return;alerted[key]=1;$('alertTxt').textContent=txt;$('alert').className='alert on'+(o?' o':'');vib();say(txt.replace(/[⛔⚠]/g,''))}
 $('alertOk').onclick=()=>$('alert').className='alert';
 let toastT;function toast(t){$('alertTxt').textContent=t;$('alert').className='alert on o';clearTimeout(toastT);toastT=setTimeout(()=>$('alert').className='alert',3500)}
+let lastWorking=null;
 function rHoje(){
   const now=Date.now(),k=CUR||dkey(now),d=CUR?DAYS[CUR]:(DAYS[k]&&state(DAYS[k])==='done'?DAYS[k]:null),st=state(d),m=model(k);
+  const wk=st==='work'||st==='rest';if(wk!==lastWorking){lastWorking=wk;try{A&&A.setWorking(wk)}catch(e){}}
   $('hello').textContent=(C.nome?'Olá, '+C.nome.split(' ')[0]+' · ':'')+longDate(dkey(now));
   const{w,r}=periods(d,now),work=sum(w),rest=sum(r),seg=st==='work'?now-w[w.length-1][0]:0;
   const iv=allWork(now),win=inWin(iv,now-24*H,now),left=10*H-win;
@@ -389,7 +398,8 @@ function rHoje(){
     $('bStart')&&($('bStart').onclick=openStart);$('bRest')&&($('bRest').onclick=openRest);$('bBack')&&($('bBack').onclick=openBack);
     $('bRep')&&($('bRep').onclick=()=>openReport(lastDoneKey()));$('bUndo')&&($('bUndo').onclick=undo);onSlide('endS',openEnd)}
   /* avisos */
-  const W=[];if(!C.nome||!C.matricula||!C.empresa)W.push(`<div class="warn">⚠ Falta configurar: ${[!C.nome&&'motorista',!C.matricula&&'viatura',!C.empresa&&'registo de tempos'].filter(Boolean).join(', ')}.<br><button class="ghost" data-go="config">Configurar agora</button></div>`);
+  const W=[],miss=wizMissing();if(miss.length&&!(C.wizLater[dkey(now)]))W.push(`<div class="warn">⚠ Falta configurar: ${miss.join(', ')}.<br><div class="duo"><button class="ghost" data-wiz="1">Configurar agora</button><button class="ghost" data-later="1">Lembrar amanhã</button></div></div>`);
+  if(A&&A.backupFolder&&(!A.backupFolder()||now-num(C.lastBackup)>3*24*H))W.push(`<div class="warn">💾 Sem cópia de segurança há mais de 3 dias.<br><button class="ghost" data-bk="1">${A.backupFolder()?'Fazer cópia agora':'Escolher a pasta'}</button></div>`);
   if(st==='off'&&win>6e4)W.push(`<div class="warn">10 h em 24 h: o trabalho de ontem ainda conta. Se começar agora, pode trabalhar até às <b>${hh(canUntil(now))}</b>.</div>`);
   if(st!=='off'&&C.vinculo!=='socio'&&st==='work'&&seg>=5.75*H)W.push(`<div class="warn r">⚠ Quase 6 h seguidas sem pausa: faça um descanso.</div>`);
   if(A){let on=true;try{on=A.readerOn()}catch(e){}if(!on)W.push(`<div class="warn">A leitura das ofertas Uber/Bolt está desligada.<br><button class="ghost" data-go="config">Ligar na Config</button></div>`)}
@@ -406,7 +416,10 @@ function rMais(k,d,work,rest,km,fat,m){const ym=k.slice(0,7),wd=workedDays(ym),f
 $('mais').onclick=()=>{const b=$('maisBox');b.hidden=!b.hidden;$('mais').textContent=b.hidden?'VER MAIS ⌄':'VER MENOS ⌃';rHoje()};
 const lastDoneKey=()=>Object.keys(DAYS).filter(k=>state(DAYS[k])==='done').sort().pop();
 function undo(){if(!UNDO.length)return toast('Não há nada para anular.');const s=JSON.parse(UNDO.pop());DAYS=s.DAYS;CUR=s.CUR;ls.set('jt2:undo',UNDO);saveD();$('act').dataset.st='';render();toast('Último lançamento anulado.')}
-document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g)go(g.dataset.go)});
+document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g)go(g.dataset.go);
+  if(e.target.closest('[data-wiz]')){const i=WIZ.findIndex((w,j)=>w[3]&&!wizDone(j));UI.wiz=i<0?11:i;saveUI();go('config')}
+  if(e.target.closest('[data-later]')){C.wizLater={[dkey(Date.now())]:1};saveC();rHoje()}
+  if(e.target.closest('[data-bk]')){if(A.backupFolder())doBackup(false);else A.backupPickFolder();setTimeout(rHoje,500)}});
 
 /* ================= MAPA ================= */
 function rMapa(){const B=$('mapaBox');
@@ -427,10 +440,10 @@ function rMapa(){const B=$('mapaBox');
   <div class="cal" style="margin-top:10px">${cells.join('')}</div><p class="note">Verde: trabalhou · amarelo: folga. Toque num dia para o abrir.</p></div>
   <div class="card rows"><h2>Desempenho do mês</h2>${R('Dias trabalhados / planeados',wd.length+' / '+m.dias)}${R('Folgas',folgas)}${R('Horas',hmTxt(h))}${R('Km',Math.round(km)+' km')}
   ${R('Faturado',eu(fat),'ok')}${R('Objetivo do mês',eu(m.mes))}${R('% cumprida',m.mes?Math.round(fat/m.mes*100)+' %':'—',fat>=m.mes?'ok':'')}${R('Média por hora',h?dec(fat/(h/H))+' €/h':'—')}${R('Despesas do mês (previstas)',eu(m.desp))}${R('Energia (estimada)',eu(en))}</div>
-  <button class="big g" id="mmCsv">Partilhar mapa do mês (CSV)</button><button class="outline" id="mmQ1">PDF do registo 1–15</button><button class="outline" id="mmQ2">PDF do registo 16–${n}</button>`;
+  <button class="big g" id="mmPag">💶 Conferir pagamentos Uber/Bolt</button><button class="outline" id="mmCsv">Partilhar mapa do mês (CSV)</button><button class="outline" id="mmQ1">PDF do registo 1–15</button><button class="outline" id="mmQ2">PDF do registo 16–${n}</button>`;
   $('mmP').onclick=()=>{const d=new Date(y,mo-2,1);UI.mapaMes=dkey(d).slice(0,7);saveUI();rMapa()};$('mmN').onclick=()=>{const d=new Date(y,mo,1);UI.mapaMes=dkey(d).slice(0,7);saveUI();rMapa()};
   B.querySelectorAll('[data-day]').forEach(c=>c.onclick=()=>{UI.mapaDay=c.dataset.day;UI.mapaV='dia';saveUI();fillSeg();rMapa()});
-  $('mmQ1').onclick=()=>pdfQuinzena(ym+'-01');$('mmQ2').onclick=()=>pdfQuinzena(ym+'-16');
+  $('mmPag').onclick=()=>openPag();$('mmQ1').onclick=()=>pdfQuinzena(ym+'-01');$('mmQ2').onclick=()=>pdfQuinzena(ym+'-16');
   $('mmCsv').onclick=()=>{const L=['Dia;Início;Fim;Horas;Descanso;Km;Faturado;€/h;€/km;Observações'];wd.forEach(k=>{const s=dayStats(k);L.push([k,s.w[0]?hh(s.w[0][0]):'',s.w.length?hh(s.w[s.w.length-1][1]):'',hm(s.work),hm(s.rest),Math.round(s.km),dec(s.fat),s.eh?dec(s.eh):'',s.ek?dec(s.ek):'',(s.d.obs||'').replace(/[;\n]/g,' ')].join(';'))});
     const csv=L.join('\n');if(A&&A.shareText)A.shareText(`Mapa ${MES[mo-1]} ${y}`,csv);else{try{navigator.clipboard.writeText(csv);toast('CSV copiado.')}catch(e){}}}}
 
@@ -466,7 +479,8 @@ $('pad').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)r
 /* ================= CONFIG (cap. 18) ================= */
 let cfgOpen=false;
 function rConfig(){const B=$('cfgBox');
-  if(!cfgOpen){B.innerHTML=`<div class="card"><h2>Código de acesso</h2><p class="note">4 números (de origem 0000).</p><input id="cod" inputmode="numeric" maxlength="4" style="text-align:center;font-size:28px;letter-spacing:10px" aria-label="Código"><button class="big g" id="codOk">Entrar</button></div>`;
+  if(UI.wiz!=null)cfgOpen=true;
+  if(!cfgOpen){B.innerHTML=`<div data-sec="cod" class="card"><h2>Código de acesso</h2><p class="note">4 números (de origem 0000).</p><input id="cod" inputmode="numeric" maxlength="4" style="text-align:center;font-size:28px;letter-spacing:10px" aria-label="Código"><button class="big g" id="codOk">Entrar</button></div>`;
     const go2=()=>{if($('cod').value===String(C.codigo||'0000')){cfgOpen=true;rConfig()}else{$('cod').value='';toast('Código errado.')}};$('codOk').onclick=go2;$('cod').addEventListener('input',()=>{if($('cod').value.length===4)go2()});return}
   const m=model(),F=(k,l,s='',t='decimal')=>`<label class="f">${l}${s?`<small>${s}</small>`:''}<input data-c="${k}" ${t==='text'?'':`inputmode="${t}"`} value="${esc(C[k]??'')}"></label>`;
   const T=(k,l,s='')=>`<label class="f wide">${l}${s?`<small>${s}</small>`:''}<input data-c="${k}" value="${esc(C[k]??'')}"></label>`;
@@ -474,31 +488,33 @@ function rConfig(){const B=$('cfgBox');
   const list=(k,cols)=>`<div class="list">${C[k].map((x,i)=>`<div class="it" style="grid-template-columns:${cols==='rep'?'minmax(0,1fr) 80px 56px 36px':'minmax(0,1fr) 96px 36px'}"><input data-l="${k}|${i}|n" value="${esc(x.n)}" aria-label="Nome"><input data-l="${k}|${i}|v" value="${esc(x.v)}" inputmode="decimal" aria-label="Valor"${cols==='rep'?' placeholder="total"':''}>${cols==='rep'?`<input data-l="${k}|${i}|m" value="${esc(x.m)}" inputmode="numeric" aria-label="Meses" placeholder="meses">`:''}<button class="x" data-ld="${k}|${i}" aria-label="Apagar">✕</button></div>`).join('')}<button class="ghost" data-la="${k}" style="min-height:38px;font-size:13px">+ Acrescentar</button></div>`;
   const reader=A?(()=>{let on=false;try{on=A.readerOn()}catch(e){}return on})():null;
   B.innerHTML=`
-  <div class="card"><h2>Leitura Uber/Bolt</h2>${reader===null?'<p class="note">Só na app do telemóvel.</p>':`<p>${reader?'<b class="ok">✓ Leitura ligada</b>':'<b class="bad">Desligada</b>'}</p>
+  <div data-sec="leit" class="card"><h2>Leitura Uber/Bolt</h2>${reader===null?'<p class="note">Só na app do telemóvel.</p>':`<p>${reader?'<b class="ok">✓ Leitura ligada</b>':'<b class="bad">Desligada</b>'}</p>
    <div class="duo"><button id="rdOpen">${reader?'Acessibilidade':'Ligar a leitura'}</button><button class="ghost" id="rdInfo">Definições restritas</button></div><button class="outline" id="rdTest">Testar o cartão</button>`}</div>
-  <div class="card"><h2>Motorista e viatura</h2>${T('nome','Nome')}${T('viatura','Marca / modelo')}${T('matricula','Matrícula','só letras e números, ex.: AA00BB')}<p class="note" id="matOk"></p></div>
-  <div class="card"><h2>Aplicações</h2><div class="chips">${['Uber','Bolt','Particular','Outra'].map(a=>`<button data-app="${a}" class="${C.apps.includes(a)?'on':''}">${a}</button>`).join('')}</div><p class="note">A leitura automática é só Uber e Bolt.</p></div>
-  <div class="card"><h2>Objetivos e folgas</h2><p class="note">Folgas da semana:</p><div class="chips">${['D','S','T','Q','Q','S','S'].map((d,i)=>`<button data-fs="${i}" class="${C.folgasSem.includes(i)?'on':''}" aria-label="${DOW[i]}">${d}</button>`).join('')}</div>
+  <div data-sec="mot" class="card"><h2>Motorista e viatura</h2>${T('nome','Nome')}${T('viatura','Marca / modelo')}${T('matricula','Matrícula','só letras e números, ex.: AA00BB')}<p class="note" id="matOk"></p></div>
+  <div data-sec="apps" class="card"><h2>Aplicações</h2><div class="chips">${['Uber','Bolt','Particular','Outra'].map(a=>`<button data-app="${a}" class="${C.apps.includes(a)?'on':''}">${a}</button>`).join('')}</div><p class="note">A leitura automática é só Uber e Bolt.</p></div>
+  <div data-sec="folgas" class="card"><h2>Objetivos e folgas</h2><p class="note">Folgas da semana:</p><div class="chips">${['D','S','T','Q','Q','S','S'].map((d,i)=>`<button data-fs="${i}" class="${C.folgasSem.includes(i)?'on':''}" aria-label="${DOW[i]}">${d}</button>`).join('')}</div>
    <label class="f wide">Folgas em dias do mês<small>ex.: 2026-12-02, 2026-12-25</small><input id="fDias" value="${esc(C.folgasDias.join(', '))}"></label>${F('ganhar','Quanto quer ganhar acima das despesas (%)','de origem 30 %')}</div>
-  <div class="card"><h2>Registo de tempos (lei)</h2>${T('empresa','Empresa / operador')}${T('nif','NIF')}${T('sede','Sede')}${T('licenca','Licença de operador')}${T('cert','Certificado de motorista TVDE')}<label class="f">Renovação do certificado<input type="date" data-c="certVal" value="${esc(C.certVal)}"></label>
+  <div data-sec="reg" class="card"><h2>Registo de tempos (lei)</h2>${T('empresa','Empresa / operador')}${T('nif','NIF')}${T('sede','Sede')}${T('licenca','Licença de operador')}${T('cert','Certificado de motorista TVDE')}<label class="f">Renovação do certificado<input type="date" data-c="certVal" value="${esc(C.certVal)}"></label>
    ${seg('vinculo',[['contrato','Contrato'],['recibos','Recibos verdes'],['socio','Sócio-gerente']])}<p class="note">Sócio-gerente: sem avisos de 6 h, pausas e 11 h. As 10 h em 24 h contam sempre.</p></div>
-  <div class="card"><h2>Energia</h2>${seg('eTipo',[['comb','Combustão'],['elet','Elétrico'],['phev','Híbrido plug-in']])}
+  <div data-sec="en" class="card"><h2>Energia</h2>${seg('eTipo',[['comb','Combustão'],['elet','Elétrico'],['phev','Híbrido plug-in']])}
    ${C.eTipo==='comb'?F('eCons','Consumo (L/100 km)')+F('ePreco','Preço por litro (€)'):F('eCons','Consumo (kWh/100 km)')+seg('eOnde',[['casa','Casa'],['fora','Fora'],['misto','Misto']])+F('eCasa','Preço kWh em casa (€)')+F('eFora','Preço kWh fora (€)')}
    ${F('ePaga','Parte que paga eu (%)','Empresa = 0 · Eu/Slot = 100 · repartido = 25/50/75')}<p class="note">Custo por km: ${dec(m.ekm,3)} €</p></div>
-  <div class="card"><h2>Despesas por mês</h2><p class="note">Fixas (mesmo valor todos os meses):</p>${list('fixas')}<p class="note">Repartidas (total ÷ meses, ex.: pneus 480 ÷ 12):</p>${list('repart','rep')}<p class="note">Não fixas (média por mês):</p>${list('naoFixas')}<p class="note">Os ordenados não são despesas.</p></div>
-  <div class="card"><h2>Mínimos</h2>${seg('minMode',[['auto','Usar os calculados'],['mao','Escrever à mão']])}
+  <div data-sec="desp" class="card"><h2>Despesas por mês</h2><p class="note">Fixas (mesmo valor todos os meses):</p>${list('fixas')}<p class="note">Repartidas (total ÷ meses, ex.: pneus 480 ÷ 12):</p>${list('repart','rep')}<p class="note">Não fixas (média por mês):</p>${list('naoFixas')}<p class="note">Os ordenados não são despesas.</p></div>
+  <div data-sec="min" class="card"><h2>Mínimos</h2>${seg('minMode',[['auto','Usar os calculados'],['mao','Escrever à mão']])}
    ${C.minMode==='mao'||m.semDesp?(m.semDesp&&C.minMode!=='mao'?'<p class="note">Ainda não escreveu despesas: usa estes mínimos até as escrever.</p>':'')+F('mkM','Mínimo €/km')+F('mhM','Mínimo €/h'):`<div class="rows"><div class="r"><span>€/km</span><b>${dec(m.mk)}</b></div><div class="r"><span>€/h</span><b>${dec(m.mh)}</b></div></div><p class="note">${m.hs.n?`Média dos últimos ${m.hs.n} dias: ${dec(m.hs.h,1)} h e ${Math.round(m.hs.km)} km por dia.`:'Ainda sem dias terminados: usa as médias abaixo.'}</p>${F('hDia','Média de horas por dia')}${F('kmDia','Média de km por dia')}`}</div>
-  <div class="card"><h2>Cartão da oferta</h2><label class="f">Tempo no ecrã<select data-c="cSecs">${[[10,'10 s'],[15,'15 s'],[20,'20 s'],[30,'30 s'],[0,'Até eu fechar']].map(([v,t])=>`<option value="${v}" ${num(C.cSecs)===v?'selected':''}>${t}</option>`).join('')}</select></label>
+  <div data-sec="mais" class="card"><h2>Cartão da oferta</h2><label class="f">Tempo no ecrã<select data-c="cSecs">${[[10,'10 s'],[15,'15 s'],[20,'20 s'],[30,'30 s'],[0,'Até eu fechar']].map(([v,t])=>`<option value="${v}" ${num(C.cSecs)===v?'selected':''}>${t}</option>`).join('')}</select></label>
    <label class="f">Tamanho das letras<small>10 a 30 · normal 20</small><input data-c="cFont" inputmode="numeric" value="${esc(C.cFont)}"></label>${seg('voz',[['true','Voz ligada'],['false','Voz desligada']])}
    ${T('vGood','Frase quando é tudo verde')}${T('vMid','Frase quando há verde e vermelho')}${T('vBad','Frase quando é tudo vermelho')}</div>
-  <div class="card rows"><h2>Este mês</h2><div class="r"><span>Dias de trabalho</span><b>${m.dias}</b></div><div class="r"><span>Objetivo do mês</span><b>${eu(m.mes)}</b></div><div class="r"><span>Objetivo por dia</span><b>${eu(m.od)}</b></div><div class="r"><span>Despesa por dia</span><b>${eu(m.dd)}</b></div><div class="r"><span>Lucro previsto no mês</span><b>${eu(m.ganho)}</b></div></div>
+  <div data-sec="mes" class="card rows"><h2>Este mês</h2><div class="r"><span>Dias de trabalho</span><b>${m.dias}</b></div><div class="r"><span>Objetivo do mês</span><b>${eu(m.mes)}</b></div><div class="r"><span>Objetivo por dia</span><b>${eu(m.od)}</b></div><div class="r"><span>Despesa por dia</span><b>${eu(m.dd)}</b></div><div class="r"><span>Lucro previsto no mês</span><b>${eu(m.ganho)}</b></div></div>
   <div class="card"><h2>Código de acesso</h2>${F('codigo','Novo código (4 números)','','numeric')}</div>
-  ${A?`<details class="card"><summary><b>Diagnóstico da leitura</b></summary><pre id="diag"></pre><div class="duo"><button class="ghost" id="dgUp">Atualizar</button><button class="ghost" id="dgCp">Copiar</button></div><button class="linkr" id="dgDel">Apagar diagnóstico</button></details>`:''}
+  ${cfgExtra(m)}
+  ${A?`<details data-sec="diag" class="card"><summary><b>Diagnóstico da leitura</b></summary><pre id="diag"></pre><div class="duo"><button class="ghost" id="dgUp">Atualizar</button><button class="ghost" id="dgCp">Copiar</button></div><button class="linkr" id="dgDel">Apagar diagnóstico</button></details>`:''}
   <button class="big g" id="cfgSave">Gravar configuração</button>`;
   const mt=$('matOk');if(mt)mt.textContent=C.matricula?(/^[A-Z0-9]{6}$/i.test(C.matricula.replace(/[^A-Z0-9]/gi,''))?'✓ Matrícula válida':'⚠ A matrícula deve ter 6 letras e números'):'';
   if(A){$('rdOpen')&&($('rdOpen').onclick=()=>A.openAccessibility());$('rdInfo')&&($('rdInfo').onclick=()=>A.openAppInfo());$('rdTest')&&($('rdTest').onclick=()=>{let ok=false;try{ok=A.testCard()}catch(e){}toast(ok?'Cartão enviado: veja no topo.':'A leitura não está ligada.')});
     const up=()=>{try{$('diag').textContent=A.diag()}catch(e){}};$('dgUp')&&($('dgUp').onclick=up);up();$('dgCp')&&($('dgCp').onclick=()=>{try{navigator.clipboard.writeText($('diag').textContent);toast('Copiado.')}catch(e){}});$('dgDel')&&($('dgDel').onclick=()=>{try{A.clearDiag()}catch(e){}up()})}
-  $('cfgSave').onclick=()=>{saveC();toast('Configuração gravada.');go('hoje')}}
+  $('cfgSave').onclick=()=>{saveC();toast('Configuração gravada.');go('hoje')};
+  if(UI.wiz!=null)wizDecorate()}
 const cfgBox=$('cfgBox');
 cfgBox.addEventListener('input',e=>{const t=e.target;
   if(t.dataset.c){const k=t.dataset.c;C[k]=['nome','viatura','matricula','empresa','nif','sede','licenca','cert','certVal','vGood','vMid','vBad','codigo'].includes(k)?t.value:t.value;if(k==='matricula')t.value=t.value.toUpperCase();saveC();if(['cSecs','cFont'].includes(k))return;
@@ -507,23 +523,191 @@ cfgBox.addEventListener('input',e=>{const t=e.target;
   if(t.id==='fDias'){C.folgasDias=t.value.split(/[,\s]+/).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x));saveC()}});
 cfgBox.addEventListener('change',e=>{if(e.target.tagName==='SELECT'&&e.target.dataset.c){C[e.target.dataset.c]=e.target.value;saveC()}});
 cfgBox.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.cs){const[k,v]=b.dataset.cs.split('|');C[k]=v==='true'?true:v==='false'?false:v;saveC();rConfig()}
+  if(b.dataset.cs){const[k,v]=b.dataset.cs.split('|');C[k]=v==='true'?true:v==='false'?false:v;saveC();rConfig();if(UI.wiz!=null)window.scrollTo(0,0)}
   else if(b.dataset.app){const a=b.dataset.app;C.apps=C.apps.includes(a)?C.apps.filter(x=>x!==a):C.apps.concat(a);saveC();rConfig()}
   else if(b.dataset.fs!=null){const i=+b.dataset.fs;C.folgasSem=C.folgasSem.includes(i)?C.folgasSem.filter(x=>x!==i):C.folgasSem.concat(i);saveC();rConfig()}
   else if(b.dataset.la){C[b.dataset.la].push(b.dataset.la==='repart'?{n:'',v:'',m:12}:{n:'',v:''});saveC();rConfig()}
   else if(b.dataset.ld){const[k,i]=b.dataset.ld.split('|');C[k].splice(+i,1);saveC();rConfig()}});
 
+/* ================= FASE 2 ================= */
+/* ---------- cópia de segurança (cap. 14) ---------- */
+function backupJSON(){let offers='[]';try{offers=A?A.offers():'[]'}catch(e){}return JSON.stringify({app:'TVDE Contas',v:2,em:new Date().toISOString(),C,DAYS,CUR,MARKS,offers:JSON.parse(offers||'[]')})}
+function doBackup(silent){if(!A||!A.backupWrite)return;let r='';try{r=A.backupWrite(backupJSON())}catch(e){r='erro'}
+  if(r==='ok'){C.lastBackup=Date.now();saveC();if(!silent)toast('Cópia de segurança feita.')}else if(!silent)toast(r==='sem pasta'?'Escolha primeiro a pasta das cópias.':'A cópia falhou: '+r);return r}
+window.onBackupFolder=n=>{toast('Pasta escolhida: '+(n||'—'));doBackup(true);render()};
+window.onRestore=txt=>{if(!txt)return toast('Não deu para ler o ficheiro.');let d;try{d=JSON.parse(txt)}catch(e){return toast('Este ficheiro não é uma cópia da TVDE Contas.')}
+  if(!d||!d.DAYS||!d.C)return toast('Este ficheiro não é uma cópia da TVDE Contas.');
+  sheet(`<h3>Repor esta cópia?</h3><p>Cópia de ${esc(new Date(d.em).toLocaleString('pt-PT'))} com ${Object.keys(d.DAYS).length} dias.</p><div class="warn r">Os dados atuais são substituídos. Antes, a app faz uma cópia deles.</div><button class="big g" id="rsOk">Repor</button><button class="link" id="rsX">Cancelar</button>`);
+  $('rsX').onclick=closeSheet;$('rsOk').onclick=()=>{doBackup(true);C=Object.assign({},CFG0,d.C);DAYS=d.DAYS;CUR=d.CUR||null;MARKS=d.MARKS||{};ls.set('jt2:cfg',C);ls.set('jt2:marks',MARKS);saveD();
+    try{A&&A.restoreOffers(JSON.stringify(d.offers||[]))}catch(e){}pushNative();closeSheet();toast('Cópia reposta.');go('hoje')}};
+function autoBackup(){if(A&&A.backupFolder&&A.backupFolder()&&Date.now()-num(C.lastBackup)>24*H)doBackup(true)}
+
+/* ---------- faturas (cap. 13) ---------- */
+const FAM_EXTRA=['Combustível','Carregamentos fora','Eletricidade de casa'];
+function families(){return[...C.fixas.map(x=>x.n),...C.repart.map(x=>x.n),...C.naoFixas.map(x=>x.n),...FAM_EXTRA].filter((x,i,a)=>x&&a.indexOf(x)===i)}
+function parseQR(raw){const o={};String(raw||'').split('*').forEach(p=>{const i=p.indexOf(':');if(i>0)o[p.slice(0,i)]=p.slice(i+1)});
+  if(!o.A||!o.O)return null;const f=o.F||'';return{nif:o.A,data:f.length===8?`${f.slice(0,4)}-${f.slice(4,6)}-${f.slice(6,8)}`:'',total:o.O,iva:o.N||'',atcud:o.H||'',doc:o.G||''}}
+function openFatura(pre){pre=pre||{};const fam=families(),kn=pre.nif&&C.forn[pre.nif]||{};
+  sheet(`<h3>Lançar fatura</h3>${A?'<button class="big g" id="fqr">📷 Ler o QR da fatura</button><p class="note">O QR está junto ao ATCUD. Com pouca luz, ligue a lanterna e aproxime devagar.</p>':''}
+  <label class="f">NIF do fornecedor<input id="fNif" inputmode="numeric" value="${esc(pre.nif||'')}"></label>
+  <label class="f wide">Fornecedor<input id="fForn" value="${esc(pre.forn||kn.n||'')}"></label>
+  <label class="f">Data<input type="date" id="fData" value="${esc(pre.data||dkey(Date.now()))}"></label>
+  <label class="f">Total (€)<input id="fTot" inputmode="decimal" value="${esc(pre.total||'')}"></label>
+  <label class="f">IVA (€)<input id="fIva" inputmode="decimal" value="${esc(pre.iva||'')}"></label>
+  <label class="f">Família da despesa<select id="fFam">${fam.map(x=>`<option ${x===(pre.fam||kn.f)?'selected':''}>${esc(x)}</option>`).join('')}<option value="__new">＋ Nova família…</option></select></label>
+  <label class="f" id="fNewW" hidden>Nome da nova família<input id="fNew"></label>
+  <label class="f" id="fQtyW" hidden><span id="fQtyL">kWh</span><input id="fQty" inputmode="decimal"></label>
+  <label class="f"><span>A fatura tem outros itens<small>ex.: combustível + lavagem</small></span><input type="checkbox" id="fOut" style="width:24px;min-height:24px"></label>
+  <div id="fOutW" hidden><label class="f">Família do outro item<select id="fFam2">${fam.map(x=>`<option>${esc(x)}</option>`).join('')}</select></label><label class="f">Valor do outro item (€)<input id="fVal2" inputmode="decimal"></label></div>
+  <label class="f wide">Nota<input id="fNota"></label><input type="hidden" id="fAt" value="${esc(pre.atcud||'')}">
+  <button class="big g" id="fSave">Guardar despesa</button><button class="link" id="fX">Cancelar</button>`);
+  const qty=()=>{const f=$('fFam').value;$('fNewW').hidden=f!=='__new';$('fQtyW').hidden=!(f==='Carregamentos fora'||f==='Combustível');$('fQtyL').textContent=f==='Combustível'?'Litros':'kWh'};qty();
+  $('fFam').onchange=qty;$('fOut').onchange=()=>$('fOutW').hidden=!$('fOut').checked;$('fX').onclick=closeSheet;
+  $('fqr')&&($('fqr').onclick=()=>{try{A.scanQr()}catch(e){toast('O leitor de QR não está disponível.')}});
+  $('fNif').addEventListener('change',()=>{const k=C.forn[$('fNif').value];if(k){if(!$('fForn').value)$('fForn').value=k.n;if(k.f)$('fFam').value=k.f;qty()}});
+  $('fSave').onclick=()=>{let fam1=$('fFam').value;if(fam1==='__new'){fam1=$('fNew').value.trim();if(!fam1)return toast('Escreva o nome da família.');C.naoFixas.push({n:fam1,v:''})}
+    const f={id:Date.now(),nif:$('fNif').value.trim(),forn:$('fForn').value.trim(),data:$('fData').value,total:num($('fTot').value),iva:num($('fIva').value),fam:fam1,qty:num($('fQty').value),atcud:$('fAt').value,nota:$('fNota').value};
+    if(!f.total)return toast('Falta o total.');
+    const dup=C.faturas.find(x=>(f.atcud&&x.atcud===f.atcud)||(x.nif===f.nif&&x.data===f.data&&Math.abs(x.total-f.total)<0.005));
+    if(dup&&!confirmOnce('Esta fatura já foi lançada? Toque outra vez em Guardar para lançar na mesma.'))return;
+    const out=$('fOut').checked&&num($('fVal2').value)>0;const items=out?[{fam:fam1,v:f.total-num($('fVal2').value)},{fam:$('fFam2').value,v:num($('fVal2').value)}]:[{fam:fam1,v:f.total}];f.items=items;
+    C.faturas.push(f);if(f.nif)C.forn[f.nif]={n:f.forn,f:fam1};applyFatura(f);saveC();closeSheet();toast('Despesa guardada.');render()}}
+window.onQr=raw=>{if(!raw)return;const q=parseQR(raw);if(!q)return toast('Este QR não é de uma fatura portuguesa.');const k=C.forn[q.nif];openFatura(Object.assign(q,{forn:k?.n,fam:k?.f}))};
+/* a fatura acerta a configuração: fixa = último valor · repartida = último total · não fixa = média por mês · kWh/litro = preço */
+function applyFatura(f){
+  f.items.forEach(it=>{const fx=C.fixas.find(x=>x.n===it.fam),rp=C.repart.find(x=>x.n===it.fam),nf=C.naoFixas.find(x=>x.n===it.fam);
+    if(fx)fx.v=dec(it.v);else if(rp)rp.v=dec(it.v);else if(nf){const byM={};C.faturas.forEach(x=>(x.items||[]).filter(i=>i.fam===it.fam).forEach(i=>{const m=(x.data||'').slice(0,7);byM[m]=(byM[m]||0)+i.v}));const v=Object.values(byM);nf.v=dec(v.reduce((a,b)=>a+b,0)/(v.length||1))}});
+  if(f.qty>0){if(f.fam==='Carregamentos fora')C.eFora=(f.total/f.qty).toFixed(3);if(f.fam==='Combustível')C.ePreco=(f.total/f.qty).toFixed(3)}}
+$('goFatura').onclick=()=>openFatura();
+
+/* ---------- zonas no mapa (cap. 11) ---------- */
+const LV={p:'Perigosa',a:'Atenção',b:'Boa'},LVC={p:'#ef4444',a:'#f59e0b',b:'#34d399'};
+function pushZones(){try{A&&A.setZones(JSON.stringify(C.zones))}catch(e){}}
+let MAP=null,draw=[],drawLayer=null,zLayers=null,editIdx=-1;
+function openZonas(){
+  sheet(`<h3>Zonas no mapa</h3><div style="display:flex;gap:6px"><input id="zq" placeholder="🔍 Procurar rua, bairro ou local"><button id="zqGo" style="min-width:56px">Ir</button></div>
+  <div id="map"></div><p class="note" id="zHint">Toque em "+ Criar zona" e depois toque à volta da zona (mínimo 3 vértices).</p>
+  <div class="duo" id="zBtns"><button id="zNew">+ Criar zona</button><button class="ghost" id="zClose">Fechar</button></div><div id="zList"></div>`);
+  $('sheetIn').classList.add('full');
+  if(typeof L==='undefined'){$('map').innerHTML='<p class="note" style="padding:20px">O mapa não carregou.</p>';}
+  else{MAP=L.map('map',{zoomControl:true}).setView([38.7369,-9.1427],12);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
+    zLayers=L.layerGroup().addTo(MAP);drawZones();MAP.on('click',e=>{if(editIdx===-2){draw.push([e.latlng.lat,e.latlng.lng]);drawPreview()}});setTimeout(()=>MAP.invalidateSize(),250)}
+  $('zClose').onclick=()=>{$('sheetIn').classList.remove('full');MAP&&MAP.remove();MAP=null;closeSheet();render()};
+  $('zNew').onclick=startDraw;$('zqGo').onclick=searchPlace;$('zq').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlace()});rZList()}
+async function searchPlace(){const q=$('zq').value.trim();if(!q||!MAP)return;try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pt&q='+encodeURIComponent(q));const j=await r.json();
+  if(j[0])MAP.setView([+j[0].lat,+j[0].lon],16);else toast('Não encontrei esse local.')}catch(e){toast('Sem internet para procurar.')}}
+function drawZones(){if(!zLayers)return;zLayers.clearLayers();C.zones.forEach((z,i)=>{if(z.poly&&z.poly.length>=3)L.polygon(z.poly,{color:LVC[z.level],weight:2,fillOpacity:.25}).addTo(zLayers).bindTooltip(esc(z.name||LV[z.level]))})}
+function drawPreview(){if(drawLayer)drawLayer.remove();drawLayer=L.layerGroup().addTo(MAP);
+  if(draw.length>1)L.polygon(draw,{color:'#38bdf8',weight:2,fillOpacity:.15,dashArray:'4'}).addTo(drawLayer);
+  draw.forEach((p,i)=>{const m=L.circleMarker(p,{radius:9,color:'#fff',fillColor:'#0ea5e9',fillOpacity:1,weight:2}).addTo(drawLayer);m.on('click',ev=>{L.DomEvent.stopPropagation(ev);draw.splice(i,1);drawPreview()})});
+  /* pontos do meio: tocar para acrescentar um vértice */
+  if(draw.length>=3)draw.forEach((p,i)=>{const q=draw[(i+1)%draw.length],mid=[(p[0]+q[0])/2,(p[1]+q[1])/2];const m=L.circleMarker(mid,{radius:6,color:'#fff',fillColor:'#64748b',fillOpacity:.9,weight:1}).addTo(drawLayer);m.on('click',ev=>{L.DomEvent.stopPropagation(ev);draw.splice(i+1,0,mid);drawPreview()})});
+  $('zHint').textContent=`${draw.length} vértices · toque no mapa para acrescentar · toque num vértice azul para o apagar · toque num ponto cinzento para acrescentar no meio`}
+function startDraw(idx){editIdx=-2;draw=idx>=0?C.zones[idx].poly.map(p=>p.slice()):[];const editing=idx>=0?idx:-1;
+  $('zBtns').innerHTML=`<button class="ghost" id="zUndo">Desfazer</button><button class="ghost" id="zClr">Limpar</button><button id="zOk">Guardar</button>`;
+  $('zUndo').onclick=()=>{draw.pop();drawPreview()};$('zClr').onclick=()=>{draw=[];drawPreview()};drawPreview();
+  $('zOk').onclick=()=>{if(draw.length<3)return toast('Precisa de pelo menos 3 vértices.');zoneForm(editing,{poly:draw})}}
+function zoneForm(idx,extra){const z=idx>=0?C.zones[idx]:{name:'',level:'p',margin:100,rules:[]};
+  $('zBtns').innerHTML='';$('zList').innerHTML=`<div class="card"><label class="f wide">Descritivo<input id="zN" value="${esc(z.name)}" placeholder="ex.: Bairro X à noite"></label>
+  <div class="seg" id="zL">${['p','a','b'].map(l=>`<button data-l="${l}" class="${z.level===l?'on':''}"><span class="lvl ${l}"></span>${LV[l]}</button>`).join('')}</div>
+  ${extra&&extra.poly?`<label class="f">Margem de aviso<select id="zM">${[0,50,100,200,300].map(v=>`<option value="${v}" ${num(z.margin)===v?'selected':''}>${v} m</option>`).join('')}</select></label>`:''}
+  <button class="big g" id="zSave">Guardar zona</button><button class="link" id="zCan">Cancelar</button></div>`;
+  let lvl=z.level;$('zL').onclick=e=>{const b=e.target.closest('button');if(!b)return;lvl=b.dataset.l;$('zL').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
+  $('zCan').onclick=()=>{editIdx=-1;draw=[];drawLayer&&drawLayer.remove();resetZBtns();rZList()};
+  $('zSave').onclick=()=>{const nz=Object.assign({},z,{name:$('zN').value.trim()||LV[lvl],level:lvl},extra||{});if($('zM'))nz.margin=num($('zM').value);
+    if(idx>=0)C.zones[idx]=nz;else C.zones.push(nz);saveC();pushZones();editIdx=-1;draw=[];drawLayer&&drawLayer.remove();drawZones();resetZBtns();rZList();toast('Zona guardada.')}}
+function resetZBtns(){$('zBtns').innerHTML='<button id="zNew">+ Criar zona</button><button class="ghost" id="zClose2">Fechar</button>';$('zNew').onclick=()=>startDraw(-1);$('zClose2').onclick=()=>$('zClose').onclick()}
+function rZList(){if(!$('zList'))return;$('zList').innerHTML=C.zones.filter(z=>z.poly).length?C.zones.map((z,i)=>z.poly?`<div class="offer"><div class="h"><span><span class="lvl ${z.level}"></span><b style="color:var(--ink)">${esc(z.name)}</b> · ${LV[z.level]} · margem ${num(z.margin)} m</span></div><div class="act"><button data-zv="${i}">Ver</button><button data-ze="${i}">✏ Ajustar vértices</button><button data-zf="${i}">Nome e nível</button><button data-zd="${i}">Apagar</button></div></div>`:'').join(''):'<p class="note">Ainda sem zonas desenhadas.</p>';
+  $('zList').onclick=e=>{const b=e.target.closest('button');if(!b)return;const i=+(b.dataset.zv??b.dataset.ze??b.dataset.zf??b.dataset.zd);
+    if(b.dataset.zv!=null&&MAP)MAP.fitBounds(C.zones[i].poly);else if(b.dataset.ze!=null){MAP&&MAP.fitBounds(C.zones[i].poly);startDraw(i)}else if(b.dataset.zf!=null)zoneForm(i,null);
+    else if(b.dataset.zd!=null){if(!confirmOnce('Toque outra vez em Apagar para confirmar.'))return;C.zones.splice(i,1);saveC();pushZones();drawZones();rZList()}}}
+function openRegra(){sheet(`<h3>Regra por morada ou código postal</h3><p class="note">Para avisar sem desenhar: ex. "2700-123", "2700", "2610-001 a 2610-290" ou parte da morada ("Amadora").</p>
+  <div class="seg" id="rgT"><button data-t="cp" class="on">Código postal</button><button data-t="range">Intervalo</button><button data-t="text">Morada</button></div>
+  <label class="f wide">Valor<input id="rgV"></label><label class="f wide">Descritivo<input id="rgN"></label>
+  <div class="seg" id="rgL">${['p','a','b'].map(l=>`<button data-l="${l}" class="${l==='p'?'on':''}"><span class="lvl ${l}"></span>${LV[l]}</button>`).join('')}</div>
+  <button class="big g" id="rgOk">Acrescentar regra</button><button class="link" id="rgX">Cancelar</button>`);
+  let t='cp',l='p';$('rgT').onclick=e=>{const b=e.target.closest('button');if(!b)return;t=b.dataset.t;$('rgT').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
+  $('rgL').onclick=e=>{const b=e.target.closest('button');if(!b)return;l=b.dataset.l;$('rgL').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
+  $('rgX').onclick=closeSheet;$('rgOk').onclick=()=>{const v=$('rgV').value.trim();if(!v)return toast('Escreva o valor.');C.zones.push({name:$('rgN').value.trim()||v,level:l,rules:[{t,v}]});saveC();pushZones();closeSheet();render()}}
+
+/* ---------- conferir pagamentos (cap. 7) ---------- */
+function weekStart(k){const d=new Date(k+'T12:00');const w=(d.getDay()+6)%7;d.setDate(d.getDate()-w);return dkey(d)}
+function openPag(wk,plat){wk=wk||weekStart(dkey(Date.now()-7*24*H));plat=plat||'Uber';
+  const days=[...Array(7)].map((_,i)=>dkey(new Date(wk+'T12:00').getTime()+i*24*H));
+  let v=0,g=0,a=0,pt=0;days.forEach(k=>{const d=DAYS[k];if(!d)return;if(plat==='Uber'){const u=d.fatU||{};v+=num(u.tl);g+=num(u.gr);a+=num(u.pr)+num(u.ou);pt+=num(u.po)}else{const b=d.fatB||{};v+=num(b.ga)-num(b.po)-num(b.gj)-num(b.ca)-num(b.ou);g+=num(b.gj);a+=num(b.ca)+num(b.ou);pt+=num(b.po)}});
+  const dev=v+g+a+pt,ds=C.descontos[plat]||(C.descontos[plat]=[]),rk=wk+'|'+plat,rc=C.receb[rk]||(C.receb[rk]=[]);
+  const des=ds.reduce((s,x)=>s+(x.t==='%'?(v+g)*num(x.v)/100:num(x.v)),0),chega=dev-des;
+  const rec=rc.reduce((s,x)=>s+num(x.v),0),nAnt=rc.filter(x=>x.d!==days[0]&&num(x.v)>0).length,tx=nAnt*num(C.taxa),dif=rec+tx-chega,ok=Math.abs(dif)<0.005;
+  const Rw=(l,x,c='')=>`<div class="r"><span>${l}</span><b class="${c}">${x}</b></div>`;
+  sheet(`<h3>💶 Conferir pagamentos</h3><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><button class="ghost" id="pgP">‹</button><b>${new Date(days[0]+'T12:00').toLocaleDateString('pt-PT')} – ${new Date(days[6]+'T12:00').toLocaleDateString('pt-PT')}</b><button class="ghost" id="pgN">›</button></div>
+  <div class="seg" id="pgPl">${['Uber','Bolt'].map(p=>`<button data-p="${p}" class="${p===plat?'on':''}">${p}</button>`).join('')}</div>
+  <div class="card rows">${Rw('Viagens',eu(v))}${Rw('Gratificações',eu(g))}${Rw('Acertos',eu(a))}${Rw('Portagens',eu(pt))}${Rw('Devia receber',eu(dev),'ok')}</div>
+  <div class="card"><h2>Descontos do operador (todas as semanas)</h2>${ds.map((x,i)=>`<div class="list"><div class="it" style="grid-template-columns:minmax(0,1fr) 80px 56px 36px"><input data-pd="${i}|n" value="${esc(x.n)}" placeholder="slot, aluguer, comissão"><input data-pd="${i}|v" value="${esc(x.v)}" inputmode="decimal"><select data-pd="${i}|t"><option ${x.t!=='%'?'selected':''}>€</option><option ${x.t==='%'?'selected':''}>%</option></select><button class="x" data-pdx="${i}">✕</button></div></div>`).join('')}
+   <button class="ghost" id="pgAddD" style="min-height:38px;font-size:13px">+ Acrescentar desconto</button><div class="rows">${Rw('Devia chegar à sua conta',eu(chega))}</div></div>
+  <div class="card"><h2>Recebimentos</h2>${rc.map((x,i)=>`<div class="list"><div class="it" style="grid-template-columns:minmax(0,1fr) 96px 36px"><select data-pr="${i}|d">${days.map((k,j)=>`<option value="${k}" ${x.d===k?'selected':''}>${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][j]} ${k.slice(8)}${j===0?' (semanal)':' (antecipado)'}</option>`).join('')}</select><input data-pr="${i}|v" value="${esc(x.v)}" inputmode="decimal"><button class="x" data-prx="${i}">✕</button></div></div>`).join('')}
+   <button class="ghost" id="pgAddR" style="min-height:38px;font-size:13px">+ Acrescentar recebimento</button><label class="f">Taxa por levantamento antecipado (€)<input id="pgTx" inputmode="decimal" value="${esc(C.taxa)}"></label></div>
+  <div class="card" style="text-align:center"><div class="clock ${ok?'ok':'bad'}" style="font-size:30px">${ok?'✓ Bate certo':'⚠ Diferença de '+eu(Math.abs(dif))}</div><p class="note">${ok?(tx>0?`A diferença de ${eu(tx)} é só das taxas.`:''):(dif<0?'Recebeu menos do que devia.':'Recebeu mais do que devia.')} Recebido ${eu(rec)} + taxas ${eu(tx)}.</p></div>
+  <button class="big g" id="pgOk">Fechar</button>`);
+  const re=()=>{saveC();const y=$('sheetIn').scrollTop;openPag(wk,plat);$('sheetIn').scrollTop=y};
+  $('pgOk').onclick=closeSheet;$('pgP').onclick=()=>openPag(dkey(new Date(wk+'T12:00').getTime()-7*24*H),plat);$('pgN').onclick=()=>openPag(dkey(new Date(wk+'T12:00').getTime()+7*24*H),plat);
+  $('pgPl').onclick=e=>{const b=e.target.closest('button');if(b)openPag(wk,b.dataset.p)};
+  $('pgAddD').onclick=()=>{ds.push({n:'',v:'',t:'€'});re()};$('pgAddR').onclick=()=>{rc.push({d:days[0],v:''});re()};
+  $('sheetIn').querySelectorAll('[data-pdx]').forEach(b=>b.onclick=()=>{ds.splice(+b.dataset.pdx,1);re()});$('sheetIn').querySelectorAll('[data-prx]').forEach(b=>b.onclick=()=>{rc.splice(+b.dataset.prx,1);re()});
+  $('sheetIn').querySelectorAll('[data-pd],[data-pr]').forEach(i=>i.addEventListener('change',()=>{const[ix,f]=(i.dataset.pd||i.dataset.pr).split('|');(i.dataset.pd?ds:rc)[+ix][f]=i.value;re()}));
+  $('pgTx').addEventListener('change',()=>{C.taxa=$('pgTx').value;re()})}
+
+/* ---------- Config: cartões novos ---------- */
+function cfgExtra(m){const fold=A&&A.backupFolder?A.backupFolder():'',fm=C.faturas.filter(f=>(f.data||'').startsWith(dkey(Date.now()).slice(0,7)));
+  return `<div data-sec="copia" class="card"><h2>Cópia de segurança</h2>${A?`<p>${fold?`Pasta: <b>${esc(fold)}</b>`:'<b class="bad">Ainda sem pasta</b>'}</p><p class="note">${C.lastBackup?'Última cópia: '+new Date(num(C.lastBackup)).toLocaleString('pt-PT'):'Ainda sem cópias.'} Cópia automática ao terminar o dia e ao abrir, se a última tiver mais de 24 h. Ficam as últimas 30.</p>
+   <button id="bkPick">${fold?'Mudar a pasta':'Escolher a pasta (ex.: Google Drive)'}</button><div class="duo"><button class="ghost" id="bkNow">Fazer cópia agora</button><button class="ghost" id="bkRest">Repor de uma cópia…</button></div>`:'<p class="note">Só na app do telemóvel.</p>'}</div>
+  <div data-sec="desp" class="card"><h2>Faturas deste mês</h2>${fm.length?`<div class="rows">${fm.slice().reverse().map(f=>`<div class="r"><span>${esc(f.data.slice(8))}/${esc(f.data.slice(5,7))} · ${esc(f.forn||f.nif)} · ${esc(f.fam)}</span><b>${eu(f.total)}</b></div>`).join('')}</div>`:'<p class="note">Ainda sem faturas este mês.</p>'}<button class="outline" id="cfFat">🧾 Lançar fatura</button>
+   ${Object.keys(C.forn).length?`<details><summary class="note">Fornecedores conhecidos (${Object.keys(C.forn).length})</summary>${Object.entries(C.forn).map(([n,x])=>`<div class="r" style="display:flex;justify-content:space-between;padding:4px 0"><span>${esc(x.n||n)} · ${esc(x.f)}</span><button class="link" style="width:auto" data-fdel="${esc(n)}">Esquecer</button></div>`).join('')}</details>`:''}</div>
+  <div data-sec="zonas" class="card"><h2>Zonas e locais perigosos</h2>${C.zones.length?`<div class="rows">${C.zones.map((z,i)=>`<div class="r"><span><span class="lvl ${z.level}"></span>${esc(z.name)} <small class="note">${z.poly?'mapa':z.rules.map(r=>esc(r.v)).join(', ')}</small></span><button class="link" style="width:auto" data-zdel="${i}">Apagar</button></div>`).join('')}</div>`:'<p class="note">Ainda sem zonas. O cartão da oferta mostra a cor da zona da recolha e do destino.</p>'}
+   <button id="cfZonas">🗺 Zonas no mapa</button><button class="outline" id="cfRegra">+ Regra por morada ou código postal</button><p class="note">As zonas desenhadas precisam de internet para encontrar a morada da oferta no mapa.</p></div>
+  <div data-sec="mais" class="card"><h2>Botão flutuante e prints</h2>
+   <div class="seg">${[['false','Botão desligado'],['true','Botão ligado']].map(([v,t])=>`<button data-cs="bubble|${v}" class="${String(C.bubble)===v?'on':''}">${t}</button>`).join('')}</div>
+   <div class="seg">${[[44,'Pequeno'],[56,'Médio'],[72,'Grande']].map(([v,t])=>`<button data-cs="bubbleSize|${v}" class="${num(C.bubbleSize)===v?'on':''}">${t}</button>`).join('')}</div><p class="note">O botão "TVDE" aparece por cima da Uber/Bolt durante o dia de trabalho; arraste-o para onde quiser e toque para abrir a app.</p>
+   <div class="seg">${[['false','Sem prints'],['true','Guardar print de cada oferta']].map(([v,t])=>`<button data-cs="prints|${v}" class="${String(C.prints)===v?'on':''}">${t}</button>`).join('')}</div>
+   <label class="f">Apagar prints ao fim de<select data-c="printDays">${[[7,'7 dias'],[15,'15 dias'],[30,'30 dias'],[0,'Nunca']].map(([v,t])=>`<option value="${v}" ${num(C.printDays)===v?'selected':''}>${t}</option>`).join('')}</select></label><p class="note">Ficam em Fotos › TVDEContas.</p></div>
+  <button data-sec="wizbtn" class="outline" id="cfWiz">🧭 Ver o assistente outra vez</button>`}
+cfgBox.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.id==='bkPick')A.backupPickFolder();else if(b.id==='bkNow'){doBackup(false);rConfig()}else if(b.id==='bkRest')A.backupRestore();
+  else if(b.id==='cfFat')openFatura();else if(b.id==='cfZonas')openZonas();else if(b.id==='cfRegra')openRegra();
+  else if(b.dataset.zdel!=null){C.zones.splice(+b.dataset.zdel,1);saveC();pushZones();rConfig()}
+  else if(b.dataset.fdel!=null){delete C.forn[b.dataset.fdel];saveC();rConfig()}
+  else if(b.id==='cfWiz'){UI.wiz=0;saveUI();rConfig();window.scrollTo(0,0)}});
+
+/* ---------- assistente de 12 passos (cap. 3) ---------- */
+const WIZ=[['Bem-vindo','Configuração em 12 passos, cerca de 5 minutos. Se já usou a app noutro telemóvel, reponha aqui a cópia de segurança.',['copia'],0],
+ ['Motorista e viatura','Aparecem no registo de tempos que a lei obriga.',['mot'],1],['Aplicações','As plataformas com que trabalha. A leitura automática é só Uber e Bolt.',['apps'],0],
+ ['Objetivo mensal e folgas','Os dias de folga contam para o objetivo e para os mínimos.',['folgas'],0],['Registo de tempos (lei)','Cabeçalho do PDF que tem de ser visado de 15 em 15 dias.',['reg'],1],
+ ['Energia','Para as contas da despesa por km e do lucro.',['en'],1],['Despesas e quanto quer ganhar','Valores aproximados chegam; as faturas acertam depois.',['desp','min'],1],
+ ['Leituras Uber/Bolt','Para o cartão da oferta aparecer por cima da Uber e da Bolt.',['leit'],0],['Cópia de segurança','Os dados ficam só no telemóvel: sem cópia, perdem-se se o telemóvel se estragar.',['copia'],1],
+ ['Mais opções','Cartão da oferta, voz, botão flutuante e prints.',['mais'],0],['Zonas','Zonas boas, de atenção e perigosas, para o cartão avisar.',['zonas'],0],['Está quase tudo pronto','',[],0]];
+function wizDone(i){const c=C;return[1,!!(c.nome&&c.matricula),1,1,!!c.empresa,!!(num(c.eCons)>0),!!(c.fixas.concat(c.repart,c.naoFixas).some(x=>num(x.v)>0)),A?(()=>{try{return A.readerOn()}catch(e){return false}})():1,!!(A&&A.backupFolder&&A.backupFolder()),1,1,1][i]}
+function wizDecorate(){const i=UI.wiz,[t,why,secs,imp]=WIZ[i];const B=$('cfgBox');
+  B.querySelectorAll('[data-sec]').forEach(el=>el.hidden=!secs.includes(el.dataset.sec));$('cfgSave').hidden=true;
+  const head=`<div class="wiz"><div class="note">Passo ${i+1} de 12</div><h3 style="margin:2px 0">${t}${imp?'<span class="imp">IMPORTANTE</span>':''}</h3>${why?`<details><summary class="note">Porquê?</summary><p class="note">${why}</p></details>`:''}
+   ${i===11?`<div class="rows">${WIZ.slice(1,11).map((w,j)=>`<div class="r"><span>${w[0]}</span><b class="${wizDone(j+1)?'ok':w[3]?'bad':'mid'}">${wizDone(j+1)?'✓':w[3]?'⚠ falta':'mais tarde'}</b></div>`).join('')}</div>`:''}</div>`;
+  B.insertAdjacentHTML('afterbegin',head);
+  B.insertAdjacentHTML('beforeend',`<button class="big g" id="wzNext">${i===11?'Ir para o Hoje':'Continuar ›'}</button><div class="duo">${i>0?'<button class="ghost" id="wzBack">‹ Voltar</button>':'<span></span>'}<button class="ghost" id="wzLater">Configurar mais tarde</button></div>`);
+  $('wzNext').onclick=()=>{if(i===11){C.wizDone=true;saveC();UI.wiz=null;saveUI();go('hoje')}else{UI.wiz=i+1;saveUI();rConfig();window.scrollTo(0,0)}};
+  $('wzBack')&&($('wzBack').onclick=()=>{UI.wiz=i-1;saveUI();rConfig();window.scrollTo(0,0)});
+  $('wzLater').onclick=()=>{C.wizDone=true;saveC();UI.wiz=null;saveUI();go('hoje')}}
+function wizMissing(){return WIZ.map((w,i)=>w[3]&&!wizDone(i)?w[0]:null).filter(Boolean)}
+
 /* ================= navegação ================= */
 function fillSeg(){document.querySelectorAll('[data-seg]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.classList.toggle('on',String(UI[g.dataset.seg])===b.dataset.v)))}
 document.querySelectorAll('[data-seg]').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;UI[g.dataset.seg]=b.dataset.v;saveUI();fillSeg();render()}));
 const R={hoje:rHoje,mapa:rMapa,viagens:rViagens,config:rConfig};
-function go(t){if(!R[t])t='hoje';if(t!=='config')cfgOpen=false;UI.tab=t;saveUI();document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('on',s.id==='t-'+t));
+function go(t){if(!R[t])t='hoje';if(t!=='config'){cfgOpen=false;if(UI.wiz!=null){UI.wiz=null;saveUI()}}UI.tab=t;saveUI();document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('on',s.id==='t-'+t));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t||(t==='viagens'&&b.dataset.t==='hoje')));R[t]();window.scrollTo(0,0)}
 function render(){R[UI.tab]&&R[UI.tab]()}
 document.querySelector('nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.t)});
 window.onNativeResume=()=>{loadOffers();render()};
 setInterval(()=>{if(UI.tab==='hoje')rHoje();else if(CUR&&state(DAYS[CUR])==='work'){/* avisos mesmo noutros ecrãs */const t=UI.tab;rHoje()}},1000);
-loadOffers();fillSeg();pushNative();go(UI.tab==='config'?'hoje':UI.tab);if(CUR&&state(DAYS[CUR])!=='done')keep(true);
+loadOffers();fillSeg();pushNative();autoBackup();
+if(!C.wizDone&&!Object.keys(DAYS).length){UI.wiz=UI.wiz??0;go('config')}else{if(UI.wiz!=null&&C.wizDone)UI.wiz=null;go(UI.tab==='config'&&UI.wiz==null?'hoje':UI.tab)}if(CUR&&state(DAYS[CUR])!=='done')keep(true);
 }
 </script>
 </body>

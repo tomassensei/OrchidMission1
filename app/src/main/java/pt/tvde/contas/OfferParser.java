@@ -21,6 +21,7 @@ public final class OfferParser {
         public double pickupMin, pickupKm, tripMin, tripKm;
         public int stops;
         public boolean airport;
+        public String pickupAddr = "", destAddr = "";
 
         public double totalKm() { return pickupKm + tripKm; }
         public double totalMin() { return pickupMin + tripMin; }
@@ -33,9 +34,15 @@ public final class OfferParser {
         }
 
         public String toJson(long at) {
-            return String.format(Locale.ROOT,
-                    "{\"at\":%d,\"plat\":\"%s\",\"v\":%.2f,\"pm\":%.0f,\"pk\":%.1f,\"tm\":%.0f,\"tk\":%.1f,\"stops\":%d,\"air\":%b}",
-                    at, platform, value, pickupMin, pickupKm, tripMin, tripKm, stops, airport);
+            try {
+                org.json.JSONObject j = new org.json.JSONObject();
+                j.put("at", at); j.put("plat", platform); j.put("v", Math.round(value * 100) / 100.0);
+                j.put("pm", Math.round(pickupMin)); j.put("pk", Math.round(pickupKm * 10) / 10.0);
+                j.put("tm", Math.round(tripMin)); j.put("tk", Math.round(tripKm * 10) / 10.0);
+                j.put("stops", stops); j.put("air", airport);
+                j.put("pa", pickupAddr); j.put("da", destAddr);
+                return j.toString();
+            } catch (Exception e) { return "{}"; }
         }
     }
 
@@ -56,6 +63,25 @@ public final class OfferParser {
 
     static double num(String s) {
         try { return Double.parseDouble(s.replace(',', '.')); } catch (Exception e) { return 0; }
+    }
+
+    private static final Pattern NOT_ADDR = Pattern.compile(
+            "(?i)^(aceitar|recusar|correspond.*|viagem.*|\\d+\\s*paragem.*|.*€.*|\\d+\\s*%|exclusiv.*|ver mapa|x|→)$");
+
+    /** Morada = o primeiro texto com letras a seguir à posição i (junta a linha seguinte se a morada continua). */
+    static String addressAfter(String[] tok, int i) {
+        for (int j = i + 1; j < tok.length && j <= i + 3; j++) {
+            String a = tok[j].trim();
+            if (a.length() < 4 || !a.matches(".*\\p{L}{3,}.*") || NOT_ADDR.matcher(a).matches()
+                    || (KM.matcher(a).find() && MIN.matcher(a).find())) continue;
+            if (j + 1 < tok.length) {
+                String nx = tok[j + 1].trim();
+                boolean cont = a.endsWith(",") || (!a.contains(",") && nx.contains(","));   // morada partida em duas linhas
+                if (cont && nx.length() < 45 && !NOT_ADDR.matcher(nx).matches() && !KM.matcher(nx).find()) a = a + " " + nx;
+            }
+            return a.length() > 120 ? a.substring(0, 120) : a;
+        }
+        return "";
     }
 
     /** Devolve null se o texto não parecer uma oferta. */
@@ -105,6 +131,16 @@ public final class OfferParser {
             o.stops = (int) num(g);
         }
         o.airport = AIRPORT.matcher(t).find();
+        // moradas: o texto a seguir à linha com os km da recolha e à linha com os km da viagem
+        String[] tok = t.split("\\s*\\|\\s*");
+        int found = 0;
+        for (int i = 0; i < tok.length && found < 2; i++) {
+            if (KM.matcher(tok[i]).find() && MIN.matcher(tok[i]).find()) {
+                String a = addressAfter(tok, i);
+                if (kms.size() >= 2 && found == 0) o.pickupAddr = a; else o.destAddr = a;
+                found++;
+            }
+        }
         return o;
     }
 }
