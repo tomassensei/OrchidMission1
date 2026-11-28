@@ -86,7 +86,8 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    static final int REQ_TREE = 11, REQ_OPEN = 12;
+    static final int REQ_TREE = 11, REQ_OPEN = 12, REQ_SAVE = 13;
+    private String pendingSave = "", pendingName = "";
 
     private void js(String fn, String arg) {
         String a = org.json.JSONObject.quote(arg == null ? "" : arg);
@@ -102,6 +103,12 @@ public class MainActivity extends Activity {
             try { getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION); } catch (Exception ignored) { }
             Prefs.put(this, "bkTree", u.toString());
             js("onBackupFolder", folderName());
+        } else if (req == REQ_SAVE) {
+            try (java.io.OutputStream os = getContentResolver().openOutputStream(u)) {
+                os.write(pendingSave.getBytes("UTF-8"));
+                js("onSaved", pendingName);
+            } catch (Exception e) { js("onSaved", ""); }
+            pendingSave = "";
         } else if (req == REQ_OPEN) {
             StringBuilder sb = new StringBuilder();
             try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(getContentResolver().openInputStream(u), "UTF-8"))) {
@@ -165,6 +172,15 @@ public class MainActivity extends Activity {
             startActivityForResult(i, REQ_TREE);
         }
         @JavascriptInterface public String backupFolder() { return folderName(); }
+        /** "Guardar como…": o motorista escolhe onde (ex.: Google Drive), um ficheiro de cada vez. */
+        @JavascriptInterface public void saveAs(String content, String name) {
+            pendingSave = content; pendingName = name;
+            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/json");
+            i.putExtra(Intent.EXTRA_TITLE, name);
+            startActivityForResult(i, REQ_SAVE);
+        }
         @JavascriptInterface public String backupWrite(String json) { return writeBackup(json); }
         @JavascriptInterface public void backupRestore() {
             Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);

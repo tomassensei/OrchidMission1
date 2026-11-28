@@ -188,8 +188,11 @@ const CFG0={nome:'',viatura:'',matricula:'',apps:['Uber','Bolt'],folgasSem:[],fo
  fixas:[{n:'Aluguer / slot',v:''},{n:'Seguro',v:''}],repart:[{n:'Pneus',v:'',m:12}],naoFixas:[{n:'Lavagens',v:''}],
  ganhar:30,minMode:'auto',mkM:0.44,mhM:10.64,kmDia:200,hDia:9,
  cSecs:15,cFont:20,voz:true,vGood:'Viagem boa',vMid:'Analisar',vBad:'Recusar',codigo:'0000',
- bubble:false,bubbleSize:56,prints:false,printDays:15,zones:[],faturas:[],forn:{},descontos:{Uber:[],Bolt:[]},receb:{},taxa:0.2,lastBackup:0,wizDone:false,wizLater:{}};
+ bubble:false,bubbleSize:56,prints:false,printDays:15,zones:[],faturas:[],forn:{},descontos:{Uber:[],Bolt:[]},receb:{},taxa:0.2,lastBackup:0,wizDone:false,wizLater:{},
+ viaturas:[],vAtiva:0,docMot:'',nifMot:'',objDia:'',ckM:0.2,lastDrive:0,geo:{},extOffers:[]};
 let C=Object.assign({},CFG0,ls.get('jt2:cfg',{}));
+if(!C.viaturas.length)C.viaturas=[{m:C.viatura||'',mat:C.matricula||''}];
+const viat=()=>C.viaturas[num(C.vAtiva)]||C.viaturas[0]||{m:'',mat:''};
 let DAYS=ls.get('jt2:days',{});           // 'AAAA-MM-DD' -> dia
 let CUR=ls.get('jt2:cur',null);          // dia aberto (chave) ou null
 let MARKS=ls.get('jt2:marks',{});        // ofertas: at -> ok|no|cc|cm
@@ -237,15 +240,10 @@ function hist(){const ks=Object.keys(DAYS).filter(k=>state(DAYS[k])==='done').so
   let h=0,km=0,nk=0;ks.forEach(k=>{h+=sum(periods(DAYS[k]).w)/H;const x=kmWork(DAYS[k]);if(x){km+=x;nk++}});
   return{h:h/ks.length,km:nk?km/nk:(num(C.kmDia)||200),n:ks.length}}
 function eKm(){const p=num(C.ePaga)/100;return C.eTipo==='elet'?num(C.eCons)/100*(C.eOnde==='fora'?num(C.eFora):C.eOnde==='misto'?(num(C.eCasa)+num(C.eFora))/2:num(C.eCasa))*p:num(C.eCons)/100*num(C.ePreco)*p}
-function model(k){k=k||dkey(Date.now());const ym=k.slice(0,7),dias=plannedDays(ym)||1,hs=hist();
-  const fix=C.fixas.reduce((s,x)=>s+num(x.v),0),rep=C.repart.reduce((s,x)=>s+num(x.v)/(num(x.m)||12),0),nf=C.naoFixas.reduce((s,x)=>s+num(x.v),0);
-  const en=eKm()*hs.km*dias,desp=fix+rep+nf+en,ganho=desp*num(C.ganhar)/100,mes=(desp+ganho)*1.06;
-  const fatAntes=workedDays(ym).filter(x=>x<k).reduce((s,x)=>s+faturado(x),0);
-  const passados=workedDays(ym).filter(x=>x<k).length,falta=Math.max(1,dias-passados);
-  const od=Math.max(0,mes-fatAntes)/falta,dd=(fix+rep)/dias+nf/dias+en/dias;
-  const semDesp=fix+rep+nf===0,mao=C.minMode==='mao'||semDesp;   // sem despesas escritas, usa os mínimos à mão
-  const mh=mao?num(C.mhM):mes/(hs.h*dias),mk=mao?num(C.mkM):mes/(hs.km*dias);
-  return{dias,mes,od,dd,mh,mk,ekm:eKm(),desp,en,ganho,fatAntes,hs,semDesp}}
+function model(k){k=k||dkey(Date.now());const ym=k.slice(0,7),[y,mo]=ym.split('-').map(Number),dias=new Date(y,mo,0).getDate(),hs=hist();
+  /* mínimos, custo por km e objetivo por dia escritos à mão na Config */
+  const od=num(C.objDia),ck=num(C.ckM),fatAntes=workedDays(ym).filter(x=>x<k).reduce((s,x)=>s+faturado(x),0);
+  return{dias,mes:od*dias,od,dd:0,mh:num(C.mhM),mk:num(C.mkM),ekm:ck,desp:0,en:0,ganho:0,fatAntes,hs,semDesp:false}}
 
 /* ---- 10 h em 24 h (cap. 6) ---- */
 function allWork(now){const iv=[];for(const k in DAYS)periods(DAYS[k],k===CUR?now:0).w.forEach(p=>iv.push(p));return iv}
@@ -277,11 +275,12 @@ function openStart(){
   ${(()=>{const le=lastEnd();if(!le||C.vinculo==='socio')return'';const r=Date.now()-le;return r<11*H?`<div class="warn r">Descansou só ${hmTxt(r)} desde o fim do último turno (mínimo 11 h).</div>`:''})()}
   <div class="warn" style="background:#0f2a1f;border-color:#1d4d37;color:#bbf7d0">Pode trabalhar até às <b>${hh(canUntil(Date.now()))}</b> (10 h em 24 h).</div>
   <label class="f">Hora<input type="time" id="sH" value="${nowHM()}"></label>
+  ${C.viaturas.length>1?`<label class="f">Viatura<select id="sViat">${C.viaturas.map((v,i)=>`<option value="${i}" ${i===num(C.vAtiva)?'selected':''}>${esc(v.mat||'—')} · ${esc(v.m)}</option>`).join('')}</select></label>`:''}
   <label class="f">Km do carro<small>último: ${esc(lastKm()||'—')}</small><input id="sKm" inputmode="numeric" value=""></label>
   ${C.eTipo!=='comb'?'<label class="f">kWh no contador<small>contador a zero → 0</small><input id="sKwh" inputmode="decimal"></label>':''}
   ${slideHTML('sGo','DESLIZA PARA INICIAR O DIA','go')}<button class="link" id="sX">Cancelar</button>`);
   $('sX').onclick=closeSheet;
-  onSlide('sGo',()=>{snap();const t=atTime($('sH').value);CUR=k;const ne={t,type:'start',km:$('sKm').value,kwh:$('sKwh')?.value||''};if(DAYS[k]){DAYS[k].ev.push(ne)}else DAYS[k]={date:k,ev:[ne]};alerted={};saveD();closeSheet();keep(true);
+  onSlide('sGo',()=>{snap();const t=atTime($('sH').value);if($('sViat')){C.vAtiva=num($('sViat').value);saveC()}const vv=viat();CUR=k;const ne={t,type:'start',km:$('sKm').value,kwh:$('sKwh')?.value||'',mat:vv.mat,viat:vv.m};if(DAYS[k]){DAYS[k].ev.push(ne)}else DAYS[k]={date:k,ev:[ne]};alerted={};saveD();closeSheet();keep(true);
     const m=model(k);toast(`Objetivo de hoje: ${eu(m.od)}`);render()})}
 function openRest(){
   const d=DAYS[CUR],fat=faturado(CUR);
@@ -327,12 +326,12 @@ function openEnd(){
 
 /* ================= relatório do dia (cap. 5.4) ================= */
 function dayStats(k){const d=DAYS[k];if(!d)return null;const{w,r}=periods(d,k===CUR?Date.now():0),work=sum(w),rest=sum(r),km=kmWork(d),fat=faturado(k),m=model(k);
-  const eh=work>3e5?fat/(work/H):0,ek=km?fat/km:0,energia=km*m.ekm,lucro=fat-m.dd;return{d,w,r,work,rest,km,fat,m,eh,ek,energia,lucro}}
+  const eh=work>3e5?fat/(work/H):0,ek=km?fat/km:0,energia=km*m.ekm,lucro=fat-km*m.ekm;return{d,w,r,work,rest,km,fat,m,eh,ek,energia,lucro}}
 function tips(s){const t=[],{m}=s;
   if(s.eh)t.push(s.eh>=m.mh?[1,`Parabéns! Faturaste ${dec(s.eh)} €/hora, acima do mínimo de ${dec(m.mh)} €/hora.`]:[0,`Faturaste ${dec(s.eh)} €/hora, abaixo do mínimo de ${dec(m.mh)} €/hora.`]);
   if(s.ek)t.push(s.ek>=m.mk?[1,`Parabéns! Faturaste ${dec(s.ek)} €/km, acima do mínimo de ${dec(m.mk)} €/km.`]:[0,`Faturaste ${dec(s.ek)} €/km, abaixo do mínimo de ${dec(m.mk)} €/km. Evite ofertas com recolhas longas.`]);
-  t.push(s.lucro>=0?[1,`Lucro do dia: ${eu(s.lucro)} (já descontada a despesa diária de ${eu(m.dd)}).`]:[0,`Prejuízo de ${eu(-s.lucro)}: o faturado não chegou à despesa diária de ${eu(m.dd)}.`]);
-  t.push(s.fat>=m.od?[1,`Objetivo do dia cumprido: ${eu(s.fat)} de ${eu(m.od)}.`]:[0,`Faltaram ${eu(m.od-s.fat)} para o objetivo do dia de ${eu(m.od)}.`]);
+  t.push(s.lucro>=0?[1,`Lucro do dia: ${eu(s.lucro)} (já descontado o custo dos km, ${eu(s.energia)}).`]:[0,`Prejuízo de ${eu(-s.lucro)}: o faturado não chegou ao custo dos km (${eu(s.energia)}).`]);
+  if(m.od)t.push(s.fat>=m.od?[1,`Objetivo do dia cumprido: ${eu(s.fat)} de ${eu(m.od)}.`]:[0,`Faltaram ${eu(m.od-s.fat)} para o objetivo do dia de ${eu(m.od)}.`]);
   const nx=model(dkey(Date.now()+24*H));t.push([2,`Objetivo para o próximo dia de trabalho: ${eu(nx.od)}.`]);
   if(s.w.length>1){let best=null;s.w.forEach(([a,b],i)=>{const e=s.d.ev.filter(x=>x.fat!=null);const f0=i===0?0:num(e[i-1]?.fat),f1=i<e.length?num(e[i]?.fat):s.fat;const v=(f1-f0)/((b-a)/H||1);if(!best||v>best.v)best={i,a,b,v}});
     if(best&&isFinite(best.v)&&best.v>0)t.push([2,`O teu melhor turno foi o ${best.i+1}.º (${hh(best.a)}–${hh(best.b)}), com ${dec(best.v)} €/hora.`])}
@@ -344,7 +343,7 @@ function openReport(k){const s=dayStats(k);if(!s)return;const{m}=s,p=fatParts(s.
   <div class="card rows">${R('Turnos',s.w.map(([a,b])=>hh(a)+'–'+hh(b)).join(' · ')||'—')}${R('Horas trabalhadas',hmTxt(s.work))}${R('Descanso',hmTxt(s.rest))}${R('Km a trabalhar',s.km?Math.round(s.km)+' km':'—')}</div>
   <div class="card rows">${R('Faturado (viagens + gratificações)',eu(s.fat),'ok')}${(s.d.fatU||s.d.fatB)?R('Acertos, campanhas e bónus',eu(p.acertos))+R('Portagens (reembolso)',eu(p.port))+R('Vai receber',eu(p.viagens+p.grat+p.acertos+p.port)):''}
   ${R('€/hora · mínimo '+dec(m.mh),s.eh?dec(s.eh):'—',s.eh>=m.mh?'ok':'bad')}${R('€/km · mínimo '+dec(m.mk),s.ek?dec(s.ek):'—',s.ek>=m.mk?'ok':'bad')}
-  ${R('Energia (estimada)',s.km?eu(s.energia):'—')}${R('Mínimo a faturar por dia',eu(m.dd))}${R('Lucro do dia',eu(s.lucro),s.lucro>=0?'ok':'bad')}${R('Objetivo do dia',eu(m.od),s.fat>=m.od?'ok':'bad')}${R('Próximo objetivo',eu(model(dkey(Date.now()+24*H)).od))}</div>
+  ${R('Custo dos km',s.km?eu(s.energia):'—')}${R('Lucro do dia',eu(s.lucro),s.lucro>=0?'ok':'bad')}${R('Objetivo do dia',eu(m.od),s.fat>=m.od?'ok':'bad')}${R('Próximo objetivo',eu(model(dkey(Date.now()+24*H)).od))}</div>
   <div class="card"><h2>Análise e conselhos</h2><ul class="tips">${tips(s).map(([ok,x])=>`<li class="${ok===1?'ok':ok===0?'bad':''}">${esc(x)}</li>`).join('')}</ul></div>
   ${s.d.obs?`<div class="card"><h2>Observações</h2>${esc(s.d.obs)}</div>`:''}
   <button class="big g" id="repClose">Fechar</button><button class="outline" id="repEdit">Alterar</button><button class="outline" id="repPdf">Ver PDF do registo (quinzena)</button><button class="linkr" id="repDel">Apagar este dia</button>`);
@@ -361,12 +360,12 @@ function openEdit(k){const d=DAYS[k];
 /* ================= registo de tempos em PDF (cap. 6) ================= */
 function pdfQuinzena(k){const[y,mo,da]=k.split('-').map(Number),first=da<=15?1:16,last=da<=15?15:new Date(y,mo,0).getDate();
   let tot=0;const rows=[];for(let i=first;i<=last;i++){const kk=`${y}-${pad2(mo)}-${pad2(i)}`,d=DAYS[kk];
-    if(!d){rows.push(`<tr><td>${pad2(i)}/${pad2(mo)}</td><td colspan="4">${isFolga(kk)?'Folga':'—'}</td><td></td></tr>`);continue}
-    const{w,r}=periods(d),t=sum(w);tot+=t;rows.push(`<tr><td>${pad2(i)}/${pad2(mo)}</td><td>${w[0]?hh(w[0][0]):''}</td><td>${w.length?hh(w[w.length-1][1]):''}</td><td>${r.map(([a,b])=>hh(a)+'–'+hh(b)).join('<br>')}</td><td>${hm(t)}</td><td>${esc(d.obs||'')}</td></tr>`)}
+    if(!d){rows.push(`<tr><td>${pad2(i)}/${pad2(mo)}</td><td colspan="4">—</td><td></td><td></td></tr>`);continue}
+    const{w,r}=periods(d),t=sum(w);tot+=t;rows.push(`<tr><td>${pad2(i)}/${pad2(mo)}</td><td>${w[0]?hh(w[0][0]):''}</td><td>${w.length?hh(w[w.length-1][1]):''}</td><td>${r.map(([a,b])=>hh(a)+'–'+hh(b)).join('<br>')}</td><td>${hm(t)}</td><td>${esc([...new Set(d.ev.filter(e=>e.mat).map(e=>e.mat))].join(', '))}</td><td>${esc(d.obs||'')}</td></tr>`)}
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font:11px Arial,sans-serif;margin:24px}h1{font-size:16px;margin:0 0 6px}table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #444;padding:4px;text-align:left;vertical-align:top}th{background:#eee}.s{display:flex;justify-content:space-between;margin-top:40px}.s div{width:45%;border-top:1px solid #000;padding-top:4px;text-align:center}</style></head><body>
   <h1>Registo de tempos de trabalho — Motorista TVDE</h1><div>Portaria n.º 7/2022 · Período: ${pad2(first)} a ${pad2(last)}/${pad2(mo)}/${y}</div>
-  <table><tr><th>Operador</th><td>${esc(C.empresa)}</td><th>NIF</th><td>${esc(C.nif)}</td></tr><tr><th>Sede</th><td colspan="3">${esc(C.sede)}</td></tr><tr><th>Licença de operador</th><td>${esc(C.licenca)}</td><th>Vínculo</th><td>${{contrato:'Contrato de trabalho',recibos:'Prestação de serviços',socio:'Sócio-gerente'}[C.vinculo]||''}</td></tr><tr><th>Motorista</th><td>${esc(C.nome)}</td><th>Certificado</th><td>${esc(C.cert)}</td></tr><tr><th>Viatura</th><td>${esc(C.viatura)}</td><th>Matrícula</th><td>${esc(C.matricula)}</td></tr></table>
-  <table><tr><th>Dia</th><th>Início</th><th>Fim</th><th>Descansos</th><th>Horas de trabalho</th><th>Observações</th></tr>${rows.join('')}<tr><th colspan="4">Total da quinzena</th><th>${hm(tot)}</th><th></th></tr></table>
+  <table><tr><th>Operador</th><td>${esc(C.empresa)}</td><th>NIF</th><td>${esc(C.nif)}</td></tr><tr><th>Sede</th><td colspan="3">${esc(C.sede)}</td></tr><tr><th>Licença de operador</th><td>${esc(C.licenca)}</td><th>Vínculo</th><td>${{contrato:'Contrato de trabalho',recibos:'Prestação de serviços',socio:'Sócio-gerente'}[C.vinculo]||''}</td></tr><tr><th>Motorista</th><td>${esc(C.nome)}</td><th>Certificado</th><td>${esc(C.cert)}</td></tr><tr><th>CC / BI n.º</th><td>${esc(C.docMot)}</td><th>NIF do motorista</th><td>${esc(C.nifMot)}</td></tr><tr><th>Viatura(s)</th><td colspan="3">${C.viaturas.filter(v=>v.mat).map(v=>esc(v.mat+' · '+v.m)).join('; ')}</td></tr></table>
+  <table><tr><th>Dia</th><th>Início</th><th>Fim</th><th>Descansos</th><th>Horas de trabalho</th><th>Viatura</th><th>Observações</th></tr>${rows.join('')}<tr><th colspan="4">Total da quinzena</th><th>${hm(tot)}</th><th></th><th></th></tr></table>
   <div class="s"><div>Visto do motorista</div><div>Visto do operador</div></div><p style="margin-top:20px;color:#555">Visar de 15 em 15 dias e guardar durante 5 anos.</p></body></html>`;
   if(A&&A.printHtml)A.printHtml(html,`Registo ${y}-${pad2(mo)} ${first}-${last}`);else toast('O PDF só se gera na app do telemóvel.')}
 
@@ -399,6 +398,7 @@ function rHoje(){
     $('bRep')&&($('bRep').onclick=()=>openReport(lastDoneKey()));$('bUndo')&&($('bUndo').onclick=undo);onSlide('endS',openEnd)}
   /* avisos */
   const W=[],miss=wizMissing();if(miss.length&&!(C.wizLater[dkey(now)]))W.push(`<div class="warn">⚠ Falta configurar: ${miss.join(', ')}.<br><div class="duo"><button class="ghost" data-wiz="1">Configurar agora</button><button class="ghost" data-later="1">Lembrar amanhã</button></div></div>`);
+  if(A&&A.saveAs&&Object.keys(DAYS).length>2&&now-num(C.lastDrive)>7*24*H)W.push(`<div class="warn">☁ Guarde uma cópia na Google Drive (a última tem mais de 7 dias).<br><button class="ghost" data-drive="1">Guardar na Drive</button></div>`);
   if(A&&A.backupFolder&&(!A.backupFolder()||now-num(C.lastBackup)>3*24*H))W.push(`<div class="warn">💾 Sem cópia de segurança há mais de 3 dias.<br><button class="ghost" data-bk="1">${A.backupFolder()?'Fazer cópia agora':'Escolher a pasta'}</button></div>`);
   if(st==='off'&&win>6e4)W.push(`<div class="warn">10 h em 24 h: o trabalho de ontem ainda conta. Se começar agora, pode trabalhar até às <b>${hh(canUntil(now))}</b>.</div>`);
   if(st!=='off'&&C.vinculo!=='socio'&&st==='work'&&seg>=5.75*H)W.push(`<div class="warn r">⚠ Quase 6 h seguidas sem pausa: faça um descanso.</div>`);
@@ -410,15 +410,16 @@ function rHoje(){
 }
 function rMais(k,d,work,rest,km,fat,m){const ym=k.slice(0,7),wd=workedDays(ym),fm=wd.reduce((s,x)=>s+faturado(x),0)+(CUR&&!wd.includes(CUR)?fat:0);
   const R=(l,v,c='')=>`<div class="r"><span>${l}</span><b class="${c}">${v}</b></div>`;
-  $('maisBox').innerHTML=`<div class="card rows" style="background:var(--card2)"><h2>Dinheiro do dia</h2>${R('Faturado',eu(fat),'ok')}${R('Despesa dia',eu(m.dd))}${R('Lucro',eu(fat-m.dd),fat-m.dd>=0?'ok':'bad')}</div>
-  <div class="card rows" style="background:var(--card2)"><h2>O meu dia</h2>${R('Trabalho',hmTxt(work))}${R('Descanso',hmTxt(rest))}${R('Km a trabalhar',km?Math.round(km)+' km':'—')}${R('Energia estimada',km?eu(km*m.ekm):'—')}</div>
+  $('maisBox').innerHTML=`<div class="card rows" style="background:var(--card2)"><h2>Dinheiro do dia</h2>${R('Faturado',eu(fat),'ok')}${R('Custo dos km',eu(km*m.ekm))}${R('Lucro',eu(fat-km*m.ekm),fat-km*m.ekm>=0?'ok':'bad')}</div>
+  <div class="card rows" style="background:var(--card2)"><h2>O meu dia</h2>${R('Trabalho',hmTxt(work))}${R('Descanso',hmTxt(rest))}${R('Km a trabalhar',km?Math.round(km)+' km':'—')}</div>
   <div class="card rows" style="background:var(--card2)"><h2>Este mês</h2>${R('Dias trabalhados',wd.length+' de '+m.dias)}${R('Faturado',eu(fm))}${R('Objetivo do mês',eu(m.mes))}${R('Cumprido',m.mes?Math.round(fm/m.mes*100)+' %':'—')}</div>`}
 $('mais').onclick=()=>{const b=$('maisBox');b.hidden=!b.hidden;$('mais').textContent=b.hidden?'VER MAIS ⌄':'VER MENOS ⌃';rHoje()};
 const lastDoneKey=()=>Object.keys(DAYS).filter(k=>state(DAYS[k])==='done').sort().pop();
 function undo(){if(!UNDO.length)return toast('Não há nada para anular.');const s=JSON.parse(UNDO.pop());DAYS=s.DAYS;CUR=s.CUR;ls.set('jt2:undo',UNDO);saveD();$('act').dataset.st='';render();toast('Último lançamento anulado.')}
 document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g)go(g.dataset.go);
-  if(e.target.closest('[data-wiz]')){const i=WIZ.findIndex((w,j)=>w[3]&&!wizDone(j));UI.wiz=i<0?11:i;saveUI();go('config')}
+  if(e.target.closest('[data-wiz]')){const i=WIZ.findIndex((w,j)=>w[3]&&!wizDone(j));UI.wiz=i<0?WIZ.length-1:i;saveUI();go('config')}
   if(e.target.closest('[data-later]')){C.wizLater={[dkey(Date.now())]:1};saveC();rHoje()}
+  if(e.target.closest('[data-drive]'))saveDrive();
   if(e.target.closest('[data-bk]')){if(A.backupFolder())doBackup(false);else A.backupPickFolder();setTimeout(rHoje,500)}});
 
 /* ================= MAPA ================= */
@@ -439,7 +440,7 @@ function rMapa(){const B=$('mapaBox');
   B.innerHTML=`<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><button class="ghost" id="mmP">‹</button><b>${MES[mo-1]} ${y}</b><button class="ghost" id="mmN">›</button></div>
   <div class="cal" style="margin-top:10px">${cells.join('')}</div><p class="note">Verde: trabalhou · amarelo: folga. Toque num dia para o abrir.</p></div>
   <div class="card rows"><h2>Desempenho do mês</h2>${R('Dias trabalhados / planeados',wd.length+' / '+m.dias)}${R('Folgas',folgas)}${R('Horas',hmTxt(h))}${R('Km',Math.round(km)+' km')}
-  ${R('Faturado',eu(fat),'ok')}${R('Objetivo do mês',eu(m.mes))}${R('% cumprida',m.mes?Math.round(fat/m.mes*100)+' %':'—',fat>=m.mes?'ok':'')}${R('Média por hora',h?dec(fat/(h/H))+' €/h':'—')}${R('Despesas do mês (previstas)',eu(m.desp))}${R('Energia (estimada)',eu(en))}</div>
+  ${R('Faturado',eu(fat),'ok')}${R('Objetivo do mês',eu(m.mes))}${R('% cumprida',m.mes?Math.round(fat/m.mes*100)+' %':'—',fat>=m.mes?'ok':'')}${R('Média por hora',h?dec(fat/(h/H))+' €/h':'—')}${R('Custo dos km',eu(en))}</div>
   <button class="big g" id="mmPag">💶 Conferir pagamentos Uber/Bolt</button><button class="outline" id="mmCsv">Partilhar mapa do mês (CSV)</button><button class="outline" id="mmQ1">PDF do registo 1–15</button><button class="outline" id="mmQ2">PDF do registo 16–${n}</button>`;
   $('mmP').onclick=()=>{const d=new Date(y,mo-2,1);UI.mapaMes=dkey(d).slice(0,7);saveUI();rMapa()};$('mmN').onclick=()=>{const d=new Date(y,mo,1);UI.mapaMes=dkey(d).slice(0,7);saveUI();rMapa()};
   B.querySelectorAll('[data-day]').forEach(c=>c.onclick=()=>{UI.mapaDay=c.dataset.day;UI.mapaV='dia';saveUI();fillSeg();rMapa()});
@@ -490,33 +491,27 @@ function rConfig(){const B=$('cfgBox');
   B.innerHTML=`
   <div data-sec="leit" class="card"><h2>Leitura Uber/Bolt</h2>${reader===null?'<p class="note">Só na app do telemóvel.</p>':`<p>${reader?'<b class="ok">✓ Leitura ligada</b>':'<b class="bad">Desligada</b>'}</p>
    <div class="duo"><button id="rdOpen">${reader?'Acessibilidade':'Ligar a leitura'}</button><button class="ghost" id="rdInfo">Definições restritas</button></div><button class="outline" id="rdTest">Testar o cartão</button>`}</div>
-  <div data-sec="mot" class="card"><h2>Motorista e viatura</h2>${T('nome','Nome')}${T('viatura','Marca / modelo')}${T('matricula','Matrícula','só letras e números, ex.: AA00BB')}<p class="note" id="matOk"></p></div>
+  <div data-sec="mot" class="card"><h2>Motorista</h2>${T('nome','Nome completo')}${F('docMot','N.º do Cartão de Cidadão / BI','','text')}${F('nifMot','NIF do motorista','','numeric')}</div>
+  <div data-sec="mot" class="card"><h2>Viaturas</h2>${C.viaturas.map((v,i)=>`<div class="offer"><label class="f wide">Marca / modelo<input data-v="${i}|m" value="${esc(v.m)}"></label><label class="f">Matrícula<small class="${/^[A-Z0-9]{6}$/i.test((v.mat||'').replace(/[^A-Z0-9]/gi,''))?'ok':'bad'}">${v.mat?(/^[A-Z0-9]{6}$/i.test(v.mat.replace(/[^A-Z0-9]/gi,''))?'✓ Matrícula válida':'⚠ 6 letras e números'):'ex.: AA-00-BB'}</small><input data-v="${i}|mat" value="${esc(v.mat)}" style="text-transform:uppercase"></label><div class="act"><button data-va="${i}" class="${i===num(C.vAtiva)?'on':''}">${i===num(C.vAtiva)?'✓ Em uso':'Usar esta'}</button>${C.viaturas.length>1?`<button data-vd="${i}">Apagar</button>`:''}</div></div>`).join('')}<button class="ghost" id="vAdd" style="min-height:38px;font-size:13px">+ Acrescentar viatura</button><p class="note">Com mais de uma viatura, a app pergunta qual vai usar ao começar o dia.</p></div>
   <div data-sec="apps" class="card"><h2>Aplicações</h2><div class="chips">${['Uber','Bolt','Particular','Outra'].map(a=>`<button data-app="${a}" class="${C.apps.includes(a)?'on':''}">${a}</button>`).join('')}</div><p class="note">A leitura automática é só Uber e Bolt.</p></div>
-  <div data-sec="folgas" class="card"><h2>Objetivos e folgas</h2><p class="note">Folgas da semana:</p><div class="chips">${['D','S','T','Q','Q','S','S'].map((d,i)=>`<button data-fs="${i}" class="${C.folgasSem.includes(i)?'on':''}" aria-label="${DOW[i]}">${d}</button>`).join('')}</div>
-   <label class="f wide">Folgas em dias do mês<small>ex.: 2026-12-02, 2026-12-25</small><input id="fDias" value="${esc(C.folgasDias.join(', '))}"></label>${F('ganhar','Quanto quer ganhar acima das despesas (%)','de origem 30 %')}</div>
-  <div data-sec="reg" class="card"><h2>Registo de tempos (lei)</h2>${T('empresa','Empresa / operador')}${T('nif','NIF')}${T('sede','Sede')}${T('licenca','Licença de operador')}${T('cert','Certificado de motorista TVDE')}<label class="f">Renovação do certificado<input type="date" data-c="certVal" value="${esc(C.certVal)}"></label>
+    <div data-sec="reg" class="card"><h2>Registo de tempos (lei)</h2>${T('empresa','Empresa / operador')}${T('nif','NIF')}${T('sede','Sede')}${T('licenca','Licença de operador')}${T('cert','Certificado de motorista TVDE')}<label class="f">Renovação do certificado<input type="date" data-c="certVal" value="${esc(C.certVal)}"></label>
    ${seg('vinculo',[['contrato','Contrato'],['recibos','Recibos verdes'],['socio','Sócio-gerente']])}<p class="note">Sócio-gerente: sem avisos de 6 h, pausas e 11 h. As 10 h em 24 h contam sempre.</p></div>
-  <div data-sec="en" class="card"><h2>Energia</h2>${seg('eTipo',[['comb','Combustão'],['elet','Elétrico'],['phev','Híbrido plug-in']])}
-   ${C.eTipo==='comb'?F('eCons','Consumo (L/100 km)')+F('ePreco','Preço por litro (€)'):F('eCons','Consumo (kWh/100 km)')+seg('eOnde',[['casa','Casa'],['fora','Fora'],['misto','Misto']])+F('eCasa','Preço kWh em casa (€)')+F('eFora','Preço kWh fora (€)')}
-   ${F('ePaga','Parte que paga eu (%)','Empresa = 0 · Eu/Slot = 100 · repartido = 25/50/75')}<p class="note">Custo por km: ${dec(m.ekm,3)} €</p></div>
-  <div data-sec="desp" class="card"><h2>Despesas por mês</h2><p class="note">Fixas (mesmo valor todos os meses):</p>${list('fixas')}<p class="note">Repartidas (total ÷ meses, ex.: pneus 480 ÷ 12):</p>${list('repart','rep')}<p class="note">Não fixas (média por mês):</p>${list('naoFixas')}<p class="note">Os ordenados não são despesas.</p></div>
-  <div data-sec="min" class="card"><h2>Mínimos</h2>${seg('minMode',[['auto','Usar os calculados'],['mao','Escrever à mão']])}
-   ${C.minMode==='mao'||m.semDesp?(m.semDesp&&C.minMode!=='mao'?'<p class="note">Ainda não escreveu despesas: usa estes mínimos até as escrever.</p>':'')+F('mkM','Mínimo €/km')+F('mhM','Mínimo €/h'):`<div class="rows"><div class="r"><span>€/km</span><b>${dec(m.mk)}</b></div><div class="r"><span>€/h</span><b>${dec(m.mh)}</b></div></div><p class="note">${m.hs.n?`Média dos últimos ${m.hs.n} dias: ${dec(m.hs.h,1)} h e ${Math.round(m.hs.km)} km por dia.`:'Ainda sem dias terminados: usa as médias abaixo.'}</p>${F('hDia','Média de horas por dia')}${F('kmDia','Média de km por dia')}`}</div>
+      <div data-sec="min" class="card"><h2>Mínimos e objetivo</h2><p class="note">O cartão da oferta fica verde quando paga pelo menos estes valores.</p>${F('mkM','Mínimo €/km')}${F('mhM','Mínimo €/h')}${F('ckM','Custo por km (€)','combustível/energia + desgaste · usado no lucro')}${F('objDia','Objetivo por dia (€)','para a barra do Hoje · vazio = sem objetivo')}</div>
   <div data-sec="mais" class="card"><h2>Cartão da oferta</h2><label class="f">Tempo no ecrã<select data-c="cSecs">${[[10,'10 s'],[15,'15 s'],[20,'20 s'],[30,'30 s'],[0,'Até eu fechar']].map(([v,t])=>`<option value="${v}" ${num(C.cSecs)===v?'selected':''}>${t}</option>`).join('')}</select></label>
    <label class="f">Tamanho das letras<small>10 a 30 · normal 20</small><input data-c="cFont" inputmode="numeric" value="${esc(C.cFont)}"></label>${seg('voz',[['true','Voz ligada'],['false','Voz desligada']])}
    ${T('vGood','Frase quando é tudo verde')}${T('vMid','Frase quando há verde e vermelho')}${T('vBad','Frase quando é tudo vermelho')}</div>
-  <div data-sec="mes" class="card rows"><h2>Este mês</h2><div class="r"><span>Dias de trabalho</span><b>${m.dias}</b></div><div class="r"><span>Objetivo do mês</span><b>${eu(m.mes)}</b></div><div class="r"><span>Objetivo por dia</span><b>${eu(m.od)}</b></div><div class="r"><span>Despesa por dia</span><b>${eu(m.dd)}</b></div><div class="r"><span>Lucro previsto no mês</span><b>${eu(m.ganho)}</b></div></div>
-  <div class="card"><h2>Código de acesso</h2>${F('codigo','Novo código (4 números)','','numeric')}</div>
+    <div class="card"><h2>Código de acesso</h2>${F('codigo','Novo código (4 números)','','numeric')}</div>
   ${cfgExtra(m)}
   ${A?`<details data-sec="diag" class="card"><summary><b>Diagnóstico da leitura</b></summary><pre id="diag"></pre><div class="duo"><button class="ghost" id="dgUp">Atualizar</button><button class="ghost" id="dgCp">Copiar</button></div><button class="linkr" id="dgDel">Apagar diagnóstico</button></details>`:''}
   <button class="big g" id="cfgSave">Gravar configuração</button>`;
-  const mt=$('matOk');if(mt)mt.textContent=C.matricula?(/^[A-Z0-9]{6}$/i.test(C.matricula.replace(/[^A-Z0-9]/gi,''))?'✓ Matrícula válida':'⚠ A matrícula deve ter 6 letras e números'):'';
+  
   if(A){$('rdOpen')&&($('rdOpen').onclick=()=>A.openAccessibility());$('rdInfo')&&($('rdInfo').onclick=()=>A.openAppInfo());$('rdTest')&&($('rdTest').onclick=()=>{let ok=false;try{ok=A.testCard()}catch(e){}toast(ok?'Cartão enviado: veja no topo.':'A leitura não está ligada.')});
     const up=()=>{try{$('diag').textContent=A.diag()}catch(e){}};$('dgUp')&&($('dgUp').onclick=up);up();$('dgCp')&&($('dgCp').onclick=()=>{try{navigator.clipboard.writeText($('diag').textContent);toast('Copiado.')}catch(e){}});$('dgDel')&&($('dgDel').onclick=()=>{try{A.clearDiag()}catch(e){}up()})}
   $('cfgSave').onclick=()=>{saveC();toast('Configuração gravada.');go('hoje')};
   if(UI.wiz!=null)wizDecorate()}
 const cfgBox=$('cfgBox');
 cfgBox.addEventListener('input',e=>{const t=e.target;
+  if(t.dataset.v){const[i,f]=t.dataset.v.split('|');C.viaturas[+i][f]=f==='mat'?t.value.toUpperCase():t.value;saveC();return}
   if(t.dataset.c){const k=t.dataset.c;C[k]=['nome','viatura','matricula','empresa','nif','sede','licenca','cert','certVal','vGood','vMid','vBad','codigo'].includes(k)?t.value:t.value;if(k==='matricula')t.value=t.value.toUpperCase();saveC();if(['cSecs','cFont'].includes(k))return;
     const mt=$('matOk');if(mt&&k==='matricula')mt.textContent=/^[A-Z0-9]{6}$/i.test(t.value.replace(/[^A-Z0-9]/gi,''))?'✓ Matrícula válida':'⚠ A matrícula deve ter 6 letras e números';return}
   if(t.dataset.l){const[k,i,f]=t.dataset.l.split('|');C[k][+i][f]=t.value;saveC();return}
@@ -536,10 +531,18 @@ function doBackup(silent){if(!A||!A.backupWrite)return;let r='';try{r=A.backupWr
   if(r==='ok'){C.lastBackup=Date.now();saveC();if(!silent)toast('Cópia de segurança feita.')}else if(!silent)toast(r==='sem pasta'?'Escolha primeiro a pasta das cópias.':'A cópia falhou: '+r);return r}
 window.onBackupFolder=n=>{toast('Pasta escolhida: '+(n||'—'));doBackup(true);render()};
 window.onRestore=txt=>{if(!txt)return toast('Não deu para ler o ficheiro.');let d;try{d=JSON.parse(txt)}catch(e){return toast('Este ficheiro não é uma cópia da TVDE Contas.')}
+  const mode=pickMode;pickMode='restore';
+  if(mode==='zonas'||(d&&d.tvdeZonas&&!d.DAYS)){const z=(d.tvdeZonas||(d.C&&d.C.zones)||[]).filter(x=>x&&x.level);let n=0;
+    z.forEach(x=>{if(!C.zones.some(y=>JSON.stringify(y)===JSON.stringify(x))){C.zones.push(x);n++}});saveC();pushZones();toast(n+' zonas importadas.');render();if(MAP)drawZones();return}
+  if(mode==='ofertas'){const o=(d.offers||[]).filter(x=>x&&x.pa);const have=new Set(C.extOffers.map(x=>x.at+x.pa));let n=0;o.forEach(x=>{if(!have.has(x.at+x.pa)){C.extOffers.push({at:x.at,plat:x.plat,v:x.v,pm:x.pm,pk:x.pk,tm:x.tm,tk:x.tk,pa:x.pa});n++}});
+    C.extOffers=C.extOffers.slice(-3000);saveC();toast(n+' ofertas juntadas ao mapa.');if(MAP)showOffers();return}
   if(!d||!d.DAYS||!d.C)return toast('Este ficheiro não é uma cópia da TVDE Contas.');
   sheet(`<h3>Repor esta cópia?</h3><p>Cópia de ${esc(new Date(d.em).toLocaleString('pt-PT'))} com ${Object.keys(d.DAYS).length} dias.</p><div class="warn r">Os dados atuais são substituídos. Antes, a app faz uma cópia deles.</div><button class="big g" id="rsOk">Repor</button><button class="link" id="rsX">Cancelar</button>`);
   $('rsX').onclick=closeSheet;$('rsOk').onclick=()=>{doBackup(true);C=Object.assign({},CFG0,d.C);DAYS=d.DAYS;CUR=d.CUR||null;MARKS=d.MARKS||{};ls.set('jt2:cfg',C);ls.set('jt2:marks',MARKS);saveD();
     try{A&&A.restoreOffers(JSON.stringify(d.offers||[]))}catch(e){}pushNative();closeSheet();toast('Cópia reposta.');go('hoje')}};
+let pickMode='restore';
+function saveDrive(){if(!A||!A.saveAs)return;pickMode='restore';A.saveAs(backupJSON(),'TVDEContas_copia_'+dkey(Date.now())+'.json')}
+window.onSaved=n=>{if(!n)return toast('Não foi possível guardar.');if(n.startsWith('TVDEContas_copia_')){C.lastDrive=Date.now();saveC()}toast('Guardado: '+n);render()};
 function autoBackup(){if(A&&A.backupFolder&&A.backupFolder()&&Date.now()-num(C.lastBackup)>24*H)doBackup(true)}
 
 /* ---------- faturas (cap. 13) ---------- */
@@ -587,15 +590,31 @@ let MAP=null,draw=[],drawLayer=null,zLayers=null,editIdx=-1;
 function openZonas(){
   sheet(`<h3>Zonas no mapa</h3><div style="display:flex;gap:6px"><input id="zq" placeholder="🔍 Procurar rua, bairro ou local"><button id="zqGo" style="min-width:56px">Ir</button></div>
   <div id="map"></div><p class="note" id="zHint">Toque em "+ Criar zona" e depois toque à volta da zona (mínimo 3 vértices).</p>
-  <div class="duo" id="zBtns"><button id="zNew">+ Criar zona</button><button class="ghost" id="zClose">Fechar</button></div><div id="zList"></div>`);
+  <div class="duo" id="zBtns"><button id="zNew">+ Criar zona</button><button class="ghost" id="zClose">Fechar</button></div>
+  <div class="duo" style="margin-top:8px"><button class="ghost" id="zOff">📍 Ver as minhas ofertas</button><button class="ghost" id="zExt">+ Ofertas de outro motorista</button></div><p class="note" id="zOffInfo">Mostra onde caíram as recolhas das ofertas lidas (últimos 30 dias): verde = paga acima dos mínimos, amarelo = só um, vermelho = abaixo. Ajuda a ver as zonas que pagam bem e as que não compensam.</p><div id="zList"></div>`);
   $('sheetIn').classList.add('full');
   if(typeof L==='undefined'){$('map').innerHTML='<p class="note" style="padding:20px">O mapa não carregou.</p>';}
   else{MAP=L.map('map',{zoomControl:true}).setView([38.7369,-9.1427],12);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
     zLayers=L.layerGroup().addTo(MAP);drawZones();MAP.on('click',e=>{if(editIdx===-2){draw.push([e.latlng.lat,e.latlng.lng]);drawPreview()}});setTimeout(()=>MAP.invalidateSize(),250)}
-  $('zClose').onclick=()=>{$('sheetIn').classList.remove('full');MAP&&MAP.remove();MAP=null;closeSheet();render()};
-  $('zNew').onclick=startDraw;$('zqGo').onclick=searchPlace;$('zq').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlace()});rZList()}
+  $('zClose').onclick=()=>{geoRun++;offLayer=null;$('sheetIn').classList.remove('full');MAP&&MAP.remove();MAP=null;closeSheet();render()};
+  $('zOff').onclick=showOffers;$('zExt').onclick=()=>{pickMode='ofertas';try{A.backupRestore()}catch(e){toast('Só na app do telemóvel.')}};
+  $('zNew').onclick=()=>startDraw(-1);$('zqGo').onclick=searchPlace;$('zq').addEventListener('keydown',e=>{if(e.key==='Enter')searchPlace()});rZList()}
 async function searchPlace(){const q=$('zq').value.trim();if(!q||!MAP)return;try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pt&q='+encodeURIComponent(q));const j=await r.json();
   if(j[0])MAP.setView([+j[0].lat,+j[0].lon],16);else toast('Não encontrei esse local.')}catch(e){toast('Sem internet para procurar.')}}
+let offLayer=null,geoRun=0;
+/* mapa das ofertas: procura cada morada de recolha (OpenStreetMap, 1 por segundo, guardadas para a próxima) */
+async function showOffers(){if(!MAP)return;loadOffers();const lim=Date.now()-30*24*H,m=model();
+  const all=OFFERS.concat(C.extOffers).filter(o=>o.pa&&o.at>lim);if(!all.length)return toast('Ainda sem ofertas com morada nos últimos 30 dias.');
+  if(offLayer)offLayer.remove();offLayer=L.layerGroup().addTo(MAP);const run=++geoRun;let done=0,miss=0,pts=[];
+  for(const o of all){if(run!==geoRun||!MAP)return;let g=C.geo[o.pa];
+    if(g===undefined){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=pt&q='+encodeURIComponent(o.pa));const j=await r.json();g=j[0]?[+j[0].lat,+j[0].lon]:0}catch(e){g=undefined}
+      if(g!==undefined){C.geo[o.pa]=g;ls.set('jt2:cfg',C)}await new Promise(r=>setTimeout(r,1100))}
+    done++;if(!g){miss++;continue}
+    const km=o.pk+o.tk,mn=o.pm+o.tm,ek=km?o.v/km:0,eh=mn?o.v/(mn/60):0,gk=ek>=m.mk,gh=eh>=m.mh,c=gk&&gh?'#34d399':(gk||gh)?'#facc15':'#ef4444';
+    L.circleMarker(g,{radius:7,color:'#0a120e',weight:1,fillColor:c,fillOpacity:.85}).addTo(offLayer).bindPopup(`${esc(o.plat)} · ${eu(o.v)}<br>${dec(ek)} €/km · ${dec(eh)} €/h<br>${esc(o.pa)}`);pts.push(g);
+    if($('zOffInfo'))$('zOffInfo').textContent=`A procurar moradas: ${done} de ${all.length}${miss?` (${miss} não encontradas)`:''}…`}
+  if($('zOffInfo'))$('zOffInfo').textContent=`${pts.length} ofertas no mapa${miss?`, ${miss} moradas não encontradas`:''}. Verde = acima dos mínimos · amarelo = só um · vermelho = abaixo.`;
+  if(pts.length)MAP.fitBounds(pts,{padding:[20,20]})}
 function drawZones(){if(!zLayers)return;zLayers.clearLayers();C.zones.forEach((z,i)=>{if(z.poly&&z.poly.length>=3)L.polygon(z.poly,{color:LVC[z.level],weight:2,fillOpacity:.25}).addTo(zLayers).bindTooltip(esc(z.name||LV[z.level]))})}
 function drawPreview(){if(drawLayer)drawLayer.remove();drawLayer=L.layerGroup().addTo(MAP);
   if(draw.length>1)L.polygon(draw,{color:'#38bdf8',weight:2,fillOpacity:.15,dashArray:'4'}).addTo(drawLayer);
@@ -659,11 +678,11 @@ function openPag(wk,plat){wk=wk||weekStart(dkey(Date.now()-7*24*H));plat=plat||'
 /* ---------- Config: cartões novos ---------- */
 function cfgExtra(m){const fold=A&&A.backupFolder?A.backupFolder():'',fm=C.faturas.filter(f=>(f.data||'').startsWith(dkey(Date.now()).slice(0,7)));
   return `<div data-sec="copia" class="card"><h2>Cópia de segurança</h2>${A?`<p>${fold?`Pasta: <b>${esc(fold)}</b>`:'<b class="bad">Ainda sem pasta</b>'}</p><p class="note">${C.lastBackup?'Última cópia: '+new Date(num(C.lastBackup)).toLocaleString('pt-PT'):'Ainda sem cópias.'} Cópia automática ao terminar o dia e ao abrir, se a última tiver mais de 24 h. Ficam as últimas 30.</p>
-   <button id="bkPick">${fold?'Mudar a pasta':'Escolher a pasta (ex.: Google Drive)'}</button><div class="duo"><button class="ghost" id="bkNow">Fazer cópia agora</button><button class="ghost" id="bkRest">Repor de uma cópia…</button></div>`:'<p class="note">Só na app do telemóvel.</p>'}</div>
-  <div data-sec="desp" class="card"><h2>Faturas deste mês</h2>${fm.length?`<div class="rows">${fm.slice().reverse().map(f=>`<div class="r"><span>${esc(f.data.slice(8))}/${esc(f.data.slice(5,7))} · ${esc(f.forn||f.nif)} · ${esc(f.fam)}</span><b>${eu(f.total)}</b></div>`).join('')}</div>`:'<p class="note">Ainda sem faturas este mês.</p>'}<button class="outline" id="cfFat">🧾 Lançar fatura</button>
+   <p class="note">A pasta automática tem de ser no telemóvel (o Android não deixa escolher a Google Drive como pasta automática). Se perder o telemóvel, perde estas cópias: por isso guarde também uma cópia na Drive, pelo menos 1 vez por semana.</p><button id="bkPick">${fold?'Mudar a pasta':'Escolher a pasta no telemóvel'}</button><button class="outline" id="bkDrive">☁ Guardar uma cópia na Google Drive</button><p class="note">${C.lastDrive?'Última cópia na Drive: '+new Date(num(C.lastDrive)).toLocaleDateString('pt-PT'):'Ainda sem cópia na Drive.'}</p><div class="duo"><button class="ghost" id="bkNow">Fazer cópia agora</button><button class="ghost" id="bkRest">Repor de uma cópia…</button></div>`:'<p class="note">Só na app do telemóvel.</p>'}</div>
+  <div data-sec="fat" class="card"><h2>Faturas deste mês</h2>${fm.length?`<div class="rows">${fm.slice().reverse().map(f=>`<div class="r"><span>${esc(f.data.slice(8))}/${esc(f.data.slice(5,7))} · ${esc(f.forn||f.nif)} · ${esc(f.fam)}</span><b>${eu(f.total)}</b></div>`).join('')}</div>`:'<p class="note">Ainda sem faturas este mês.</p>'}<button class="outline" id="cfFat">🧾 Lançar fatura</button>
    ${Object.keys(C.forn).length?`<details><summary class="note">Fornecedores conhecidos (${Object.keys(C.forn).length})</summary>${Object.entries(C.forn).map(([n,x])=>`<div class="r" style="display:flex;justify-content:space-between;padding:4px 0"><span>${esc(x.n||n)} · ${esc(x.f)}</span><button class="link" style="width:auto" data-fdel="${esc(n)}">Esquecer</button></div>`).join('')}</details>`:''}</div>
   <div data-sec="zonas" class="card"><h2>Zonas e locais perigosos</h2>${C.zones.length?`<div class="rows">${C.zones.map((z,i)=>`<div class="r"><span><span class="lvl ${z.level}"></span>${esc(z.name)} <small class="note">${z.poly?'mapa':z.rules.map(r=>esc(r.v)).join(', ')}</small></span><button class="link" style="width:auto" data-zdel="${i}">Apagar</button></div>`).join('')}</div>`:'<p class="note">Ainda sem zonas. O cartão da oferta mostra a cor da zona da recolha e do destino.</p>'}
-   <button id="cfZonas">🗺 Zonas no mapa</button><button class="outline" id="cfRegra">+ Regra por morada ou código postal</button><p class="note">As zonas desenhadas precisam de internet para encontrar a morada da oferta no mapa.</p></div>
+   <button id="cfZonas">🗺 Zonas no mapa</button><div class="duo" style="margin-top:8px"><button class="ghost" id="zExp">Partilhar as minhas zonas</button><button class="ghost" id="zImp">Importar zonas</button></div><button class="outline" id="cfRegra">+ Regra por morada ou código postal</button><p class="note">As zonas desenhadas precisam de internet para encontrar a morada da oferta no mapa.</p></div>
   <div data-sec="mais" class="card"><h2>Botão flutuante e prints</h2>
    <div class="seg">${[['false','Botão desligado'],['true','Botão ligado']].map(([v,t])=>`<button data-cs="bubble|${v}" class="${String(C.bubble)===v?'on':''}">${t}</button>`).join('')}</div>
    <div class="seg">${[[44,'Pequeno'],[56,'Médio'],[72,'Grande']].map(([v,t])=>`<button data-cs="bubbleSize|${v}" class="${num(C.bubbleSize)===v?'on':''}">${t}</button>`).join('')}</div><p class="note">O botão "TVDE" aparece por cima da Uber/Bolt durante o dia de trabalho; arraste-o para onde quiser e toque para abrir a app.</p>
@@ -675,23 +694,24 @@ cfgBox.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)ret
   else if(b.id==='cfFat')openFatura();else if(b.id==='cfZonas')openZonas();else if(b.id==='cfRegra')openRegra();
   else if(b.dataset.zdel!=null){C.zones.splice(+b.dataset.zdel,1);saveC();pushZones();rConfig()}
   else if(b.dataset.fdel!=null){delete C.forn[b.dataset.fdel];saveC();rConfig()}
+  else if(b.dataset.va!=null){C.vAtiva=+b.dataset.va;saveC();rConfig()}else if(b.dataset.vd!=null){C.viaturas.splice(+b.dataset.vd,1);C.vAtiva=0;saveC();rConfig()}else if(b.id==='vAdd'){C.viaturas.push({m:'',mat:''});saveC();rConfig()}
+  else if(b.id==='bkDrive')saveDrive();else if(b.id==='zExp')A.saveAs(JSON.stringify({tvdeZonas:C.zones,em:new Date().toISOString()}),'TVDEContas_zonas.json');else if(b.id==='zImp'){pickMode='zonas';A.backupRestore()}
   else if(b.id==='cfWiz'){UI.wiz=0;saveUI();rConfig();window.scrollTo(0,0)}});
 
 /* ---------- assistente de 12 passos (cap. 3) ---------- */
-const WIZ=[['Bem-vindo','Configuração em 12 passos, cerca de 5 minutos. Se já usou a app noutro telemóvel, reponha aqui a cópia de segurança.',['copia'],0],
- ['Motorista e viatura','Aparecem no registo de tempos que a lei obriga.',['mot'],1],['Aplicações','As plataformas com que trabalha. A leitura automática é só Uber e Bolt.',['apps'],0],
- ['Objetivo mensal e folgas','Os dias de folga contam para o objetivo e para os mínimos.',['folgas'],0],['Registo de tempos (lei)','Cabeçalho do PDF que tem de ser visado de 15 em 15 dias.',['reg'],1],
- ['Energia','Para as contas da despesa por km e do lucro.',['en'],1],['Despesas e quanto quer ganhar','Valores aproximados chegam; as faturas acertam depois.',['desp','min'],1],
+const WIZ=[['Bem-vindo','Configuração rápida. Se já usou a app noutro telemóvel, reponha aqui a cópia de segurança.',['copia'],0],
+ ['Motorista e viaturas','Aparecem no registo de tempos que a lei obriga. Pode ter várias viaturas.',['mot'],1],['Aplicações','As plataformas com que trabalha. A leitura automática é só Uber e Bolt.',['apps'],0],
+ ['Registo de tempos (lei)','Cabeçalho do PDF que tem de ser visado de 15 em 15 dias.',['reg'],1],['Mínimos e faturas','Os mínimos dão as cores do cartão da oferta. As faturas ficam registadas aqui.',['min','fat'],0],
  ['Leituras Uber/Bolt','Para o cartão da oferta aparecer por cima da Uber e da Bolt.',['leit'],0],['Cópia de segurança','Os dados ficam só no telemóvel: sem cópia, perdem-se se o telemóvel se estragar.',['copia'],1],
  ['Mais opções','Cartão da oferta, voz, botão flutuante e prints.',['mais'],0],['Zonas','Zonas boas, de atenção e perigosas, para o cartão avisar.',['zonas'],0],['Está quase tudo pronto','',[],0]];
-function wizDone(i){const c=C;return[1,!!(c.nome&&c.matricula),1,1,!!c.empresa,!!(num(c.eCons)>0),!!(c.fixas.concat(c.repart,c.naoFixas).some(x=>num(x.v)>0)),A?(()=>{try{return A.readerOn()}catch(e){return false}})():1,!!(A&&A.backupFolder&&A.backupFolder()),1,1,1][i]}
+function wizDone(i){const c=C,v=c.viaturas[0]||{};return[1,!!(c.nome&&v.mat&&c.docMot&&c.nifMot),1,!!c.empresa,!!(num(c.mkM)>0&&num(c.mhM)>0),A?(()=>{try{return A.readerOn()}catch(e){return false}})():1,!!(A&&A.backupFolder&&A.backupFolder()),1,1,1][i]}
 function wizDecorate(){const i=UI.wiz,[t,why,secs,imp]=WIZ[i];const B=$('cfgBox');
   B.querySelectorAll('[data-sec]').forEach(el=>el.hidden=!secs.includes(el.dataset.sec));$('cfgSave').hidden=true;
-  const head=`<div class="wiz"><div class="note">Passo ${i+1} de 12</div><h3 style="margin:2px 0">${t}${imp?'<span class="imp">IMPORTANTE</span>':''}</h3>${why?`<details><summary class="note">Porquê?</summary><p class="note">${why}</p></details>`:''}
-   ${i===11?`<div class="rows">${WIZ.slice(1,11).map((w,j)=>`<div class="r"><span>${w[0]}</span><b class="${wizDone(j+1)?'ok':w[3]?'bad':'mid'}">${wizDone(j+1)?'✓':w[3]?'⚠ falta':'mais tarde'}</b></div>`).join('')}</div>`:''}</div>`;
+  const head=`<div class="wiz"><div class="note">Passo ${i+1} de ${WIZ.length}</div><h3 style="margin:2px 0">${t}${imp?'<span class="imp">IMPORTANTE</span>':''}</h3>${why?`<details><summary class="note">Porquê?</summary><p class="note">${why}</p></details>`:''}
+   ${i===WIZ.length-1?`<div class="rows">${WIZ.slice(1,-1).map((w,j)=>`<div class="r"><span>${w[0]}</span><b class="${wizDone(j+1)?'ok':w[3]?'bad':'mid'}">${wizDone(j+1)?'✓':w[3]?'⚠ falta':'mais tarde'}</b></div>`).join('')}</div>`:''}</div>`;
   B.insertAdjacentHTML('afterbegin',head);
-  B.insertAdjacentHTML('beforeend',`<button class="big g" id="wzNext">${i===11?'Ir para o Hoje':'Continuar ›'}</button><div class="duo">${i>0?'<button class="ghost" id="wzBack">‹ Voltar</button>':'<span></span>'}<button class="ghost" id="wzLater">Configurar mais tarde</button></div>`);
-  $('wzNext').onclick=()=>{if(i===11){C.wizDone=true;saveC();UI.wiz=null;saveUI();go('hoje')}else{UI.wiz=i+1;saveUI();rConfig();window.scrollTo(0,0)}};
+  B.insertAdjacentHTML('beforeend',`<button class="big g" id="wzNext">${i===WIZ.length-1?'Ir para o Hoje':'Continuar ›'}</button><div class="duo">${i>0?'<button class="ghost" id="wzBack">‹ Voltar</button>':'<span></span>'}<button class="ghost" id="wzLater">Configurar mais tarde</button></div>`);
+  $('wzNext').onclick=()=>{if(i===WIZ.length-1){C.wizDone=true;saveC();UI.wiz=null;saveUI();go('hoje')}else{UI.wiz=i+1;saveUI();rConfig();window.scrollTo(0,0)}};
   $('wzBack')&&($('wzBack').onclick=()=>{UI.wiz=i-1;saveUI();rConfig();window.scrollTo(0,0)});
   $('wzLater').onclick=()=>{C.wizDone=true;saveC();UI.wiz=null;saveUI();go('hoje')}}
 function wizMissing(){return WIZ.map((w,i)=>w[3]&&!wizDone(i)?w[0]:null).filter(Boolean)}
